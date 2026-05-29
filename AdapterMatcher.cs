@@ -70,13 +70,19 @@ public static class AdapterMatcher
     /// <summary>
     /// Splits all Up, non-loopback adapters into physical (non-Hyper-V-virtual) and
     /// virtual (Hyper-V management NICs created by AllowManagementOS=true).
+    ///
+    /// WFP/NDIS filter-layer adapters are excluded from both lists: Windows creates them
+    /// on top of physical NICs, they share the same MAC and IP as the underlying adapter,
+    /// but they are NOT valid targets for Set-VMSwitch -NetAdapterName and should not
+    /// participate in rule matching or primary-adapter detection.
     /// </summary>
     private static (List<NetworkInterface> Physical, List<NetworkInterface> Virtual) SplitAdapters()
     {
         var all = NetworkInterface
             .GetAllNetworkInterfaces()
             .Where(n => n.OperationalStatus == OperationalStatus.Up
-                        && n.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                        && n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                        && !IsFilterLayerAdapter(n))
             .ToList();
 
         return (all.Where(n => !IsHyperVVirtual(n)).ToList(),
@@ -294,6 +300,21 @@ public static class AdapterMatcher
     /// </summary>
     private static bool IsHyperVVirtual(NetworkInterface nic) =>
         nic.Description.StartsWith("Hyper-V Virtual", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns true for Windows WFP/NDIS filter-driver adapters.  These appear as separate
+    /// NetworkInterface objects alongside the real physical NIC (e.g. "Ethernet-WFP Native
+    /// MAC Layer LightWeight Filter-0000") and share the same MAC/IP, but they are NOT
+    /// valid adapter names for Set-VMSwitch -NetAdapterName — only the real NIC's alias is.
+    /// </summary>
+    private static bool IsFilterLayerAdapter(NetworkInterface nic)
+    {
+        static bool HasMarker(string s) =>
+            s.IndexOf("-WFP ",             StringComparison.OrdinalIgnoreCase) >= 0 ||
+            s.IndexOf("LightWeight Filter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            s.IndexOf("-NDIS ",            StringComparison.OrdinalIgnoreCase) >= 0;
+        return HasMarker(nic.Name) || HasMarker(nic.Description);
+    }
 
     private static bool IsInCidr(IPAddress address, string cidr)
     {

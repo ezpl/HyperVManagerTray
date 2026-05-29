@@ -84,9 +84,26 @@ public sealed class HyperVManager : IDisposable
             using var proc = new Process { StartInfo = psi };
             proc.Start();
 
-            var stdout = await proc.StandardOutput.ReadToEndAsync();
-            var stderr = await proc.StandardError.ReadToEndAsync();
-            await proc.WaitForExitAsync();
+            // Read both streams concurrently to avoid buffering deadlocks.
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask  = proc.StandardError.ReadToEndAsync();
+
+            // Guard against hanging Hyper-V cmdlets (e.g. invalid adapter names causing
+            // WMI/DCOM lookups that never time out on their own).
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                await proc.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                proc.Kill(entireProcessTree: true);
+                _logger.LogWarning("PowerShell command timed out after 30 s: {Script}", psScript);
+                return (false, "Timed out after 30 s");
+            }
+
+            var stdout = await stdoutTask;
+            var stderr  = await stderrTask;
 
             bool ok  = proc.ExitCode == 0;
             var  msg = ok ? stdout.Trim()
