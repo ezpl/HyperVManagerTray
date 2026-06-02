@@ -176,6 +176,14 @@ schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
 
 ---
 
+## Development notes
+
+Non-obvious Hyper-V / Windows-networking gotchas and the reasoning behind the design choices
+are written up in [`DEVELOPMENT_NOTES.md`](DEVELOPMENT_NOTES.md) — read it before changing how
+the app talks to Hyper-V or the host network.
+
+---
+
 ## Built with
 
 - **Language / runtime:** C# on **.NET 10** (`net10.0-windows`), Windows Forms for the tray UI
