@@ -34,11 +34,22 @@ public sealed class HyperVManager : IDisposable
         else    _logger.LogError("ApplySwitchAsync error: {Error}", output);
     }
 
-    /// <summary>Binds a Hyper-V virtual switch to a physical NIC (makes it External).</summary>
+    /// <summary>
+    /// Binds a Hyper-V virtual switch to a physical NIC (makes it External, with the host
+    /// sharing the adapter).
+    ///
+    /// Host sharing is detached (<c>-AllowManagementOS $false</c>) <em>before</em> the external
+    /// adapter is changed, then re-enabled.  This forces Windows to remove the previous host
+    /// management vNIC instead of leaving it behind: rebinding a shared switch straight to a new
+    /// adapter orphans the old <c>vEthernet (&lt;switch&gt;)</c> NIC, and those accumulate across
+    /// rebinds — which locks the switch's settings and pollutes host routing with stale default
+    /// routes.  The two-step keeps exactly one management vNIC alive.
+    /// </summary>
     public async Task UpdateSwitchBindingAsync(string switchName, string adapterName)
     {
         _logger.LogInformation("Binding switch '{Switch}' → adapter '{Adapter}'", switchName, adapterName);
         var (ok, output) = await RunAsync(
+            $"Set-VMSwitch -Name '{Esc(switchName)}' -AllowManagementOS $false; " +
             $"Set-VMSwitch -Name '{Esc(switchName)}' -NetAdapterName '{Esc(adapterName)}' -AllowManagementOS $true");
 
         if (ok) _logger.LogInformation("Switch '{Switch}' bound to '{Adapter}'", switchName, adapterName);

@@ -178,10 +178,10 @@ public sealed class TrayApplication : ApplicationContext, IDisposable
             return;
         }
 
-        var normNew   = info.Mac.Replace(":", "").ToUpperInvariant();
+        var normNew   = AdapterMatcher.NormalizeMac(info.Mac);
         var duplicate = _config.Current.Rules.FirstOrDefault(r =>
             r.Conditions.AdapterMac is not null &&
-            r.Conditions.AdapterMac.Replace(":", "").Replace("-", "").ToUpperInvariant() == normNew);
+            AdapterMatcher.NormalizeMac(r.Conditions.AdapterMac) == normNew);
 
         if (duplicate is not null)
         {

@@ -344,6 +344,7 @@ public static class AdapterMatcher
         return BitConverter.ToUInt32(bytes, 0);
     }
 
-    private static string NormalizeMac(string mac) =>
+    /// <summary>Strips separators and upper-cases a MAC so two forms compare equal (e.g. "aa:bb…" == "AA-BB…").</summary>
+    internal static string NormalizeMac(string mac) =>
         mac.Replace(":", "").Replace("-", "").ToUpperInvariant();
 }
