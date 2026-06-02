@@ -33,6 +33,12 @@ public sealed class HyperVManager : IDisposable
         else    _logger.LogError("ApplySwitchAsync error: {Error}", output);
     }
 
+    // The bind sequence toggles AllowManagementOS and re-homes the external adapter, which is
+    // slow (~25 s observed).  It gets a longer timeout than the default so it is not killed
+    // mid-sequence: a kill after '-AllowManagementOS $false' but before '$true' would leave the
+    // host adapter with no management vNIC (and therefore no IP) until the next successful bind.
+    private static readonly TimeSpan BindTimeout = TimeSpan.FromSeconds(120);
+
     /// <summary>
     /// Binds a Hyper-V virtual switch to a physical NIC (makes it External, with the host
     /// sharing the adapter).
@@ -49,7 +55,8 @@ public sealed class HyperVManager : IDisposable
         _logger.LogInformation("Binding switch '{Switch}' → adapter '{Adapter}'", switchName, adapterName);
         var (ok, output) = await RunAsync(
             $"Set-VMSwitch -Name '{Esc(switchName)}' -AllowManagementOS $false; " +
-            $"Set-VMSwitch -Name '{Esc(switchName)}' -NetAdapterName '{Esc(adapterName)}' -AllowManagementOS $true");
+            $"Set-VMSwitch -Name '{Esc(switchName)}' -NetAdapterName '{Esc(adapterName)}' -AllowManagementOS $true",
+            BindTimeout);
 
         if (ok) _logger.LogInformation("Switch '{Switch}' bound to '{Adapter}'", switchName, adapterName);
         else    _logger.LogError("UpdateSwitchBindingAsync error: {Error}", output);
@@ -72,7 +79,7 @@ public sealed class HyperVManager : IDisposable
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private async Task<(bool ok, string output)> RunAsync(string psScript)
+    private async Task<(bool ok, string output)> RunAsync(string psScript, TimeSpan? timeout = null)
     {
         await _lock.WaitAsync();
         try
@@ -82,12 +89,13 @@ public sealed class HyperVManager : IDisposable
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(psScript));
             _logger.LogDebug("PS> {Script}", psScript);
 
-            // 30 s timeout guards against hanging Hyper-V cmdlets (e.g. invalid adapter names
-            // causing WMI/DCOM lookups that never time out on their own).
+            // Default 30 s timeout guards against hanging Hyper-V cmdlets (e.g. invalid adapter
+            // names causing WMI/DCOM lookups that never time out on their own); slow operations
+            // such as the switch rebind pass a longer one.
             var result = await ProcessRunner.RunAsync(
                 "powershell.exe",
                 $"-NonInteractive -NoProfile -WindowStyle Hidden -EncodedCommand {encoded}",
-                TimeSpan.FromSeconds(30));
+                timeout ?? TimeSpan.FromSeconds(30));
 
             if (!result.Success && result.ExitCode == -1)
                 _logger.LogWarning("PowerShell command failed/timed out: {Script} ({Error})", psScript, result.Output);
