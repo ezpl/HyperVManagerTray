@@ -35,6 +35,16 @@ internal sealed class StatusPopupForm : Form
 
     private readonly Panel _canvas;
 
+    // Cached GDI resources — created once and reused on every repaint instead of being
+    // allocated (and finalised) per Paint.  Disposed with the form.
+    private readonly Font  _headerFont  = new("Segoe UI", 7.5f, FontStyle.Bold);
+    private readonly Font  _labelFont   = new("Segoe UI", 8.5f, FontStyle.Regular);
+    private readonly Font  _valueFont   = new("Segoe UI", 8.5f, FontStyle.Regular);
+    private readonly Brush _accentBrush = new SolidBrush(Color.FromArgb(0, 120, 215));
+    private readonly Brush _labelBrush  = new SolidBrush(Color.FromArgb(108, 108, 112));
+    private readonly Brush _valueBrush  = new SolidBrush(SystemColors.MenuText);
+    private readonly Pen   _dividerPen  = new(Color.FromArgb(215, 215, 218), 1f);
+
     // ── Construction ──────────────────────────────────────────────────────────
 
     public StatusPopupForm()
@@ -55,6 +65,17 @@ internal sealed class StatusPopupForm : Form
         Controls.Add(_canvas);
 
         ClientSize = new Size(InitialW + Border * 2, 200 + Border * 2);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _headerFont.Dispose();  _labelFont.Dispose();  _valueFont.Dispose();
+            _accentBrush.Dispose(); _labelBrush.Dispose(); _valueBrush.Dispose();
+            _dividerPen.Dispose();
+        }
+        base.Dispose(disposing);
     }
 
     // Drop shadow via window-class style flag
@@ -118,23 +139,19 @@ internal sealed class StatusPopupForm : Form
         var g = e.Graphics;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-        using var headerFont = new Font("Segoe UI", 7.5f, FontStyle.Bold);
-        using var labelFont  = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-        using var valueFont  = new Font("Segoe UI", 8.5f, FontStyle.Regular);
-
         // ── DPI-adaptive layout ───────────────────────────────────────────────
         int maxLabelW = LabelNames
-            .Max(s => (int)Math.Ceiling(g.MeasureString(s, labelFont).Width));
+            .Max(s => (int)Math.Ceiling(g.MeasureString(s, _labelFont).Width));
         int valueX = LabelX + maxLabelW + LabelGap;
 
-        int rowH    = (int)Math.Ceiling(labelFont.GetHeight(g)) + 4;
-        int headerH = (int)Math.Ceiling(headerFont.GetHeight(g)) + 3;
+        int rowH    = (int)Math.Ceiling(_labelFont.GetHeight(g)) + 4;
+        int headerH = (int)Math.Ceiling(_headerFont.GetHeight(g)) + 3;
 
         int requiredH = TopPad + headerH + rowH * 4 + SepH + headerH + rowH * 4 + BotPad;
 
         int longestValueW = new[] { _hostAdapter, _hostIp, _gateway, _dns,
                                     _vmName, _switchName, _ruleName, _vmIp }
-            .Max(s => (int)Math.Ceiling(g.MeasureString(s, valueFont).Width));
+            .Max(s => (int)Math.Ceiling(g.MeasureString(s, _valueFont).Width));
         int requiredW = valueX + longestValueW + LabelX;
 
         int newW = Math.Max(_canvas.Width, requiredW);
@@ -147,36 +164,29 @@ internal sealed class StatusPopupForm : Form
             return; // size change triggers fresh repaint
         }
 
-        // ── Brushes & pens ────────────────────────────────────────────────────
-        using var accentBrush = new SolidBrush(Color.FromArgb(0, 120, 215));
-        using var labelBrush  = new SolidBrush(Color.FromArgb(108, 108, 112));
-        using var valueBrush  = new SolidBrush(SystemColors.MenuText);
-        using var dividerPen  = new Pen(Color.FromArgb(215, 215, 218), 1f);
-
         int y = TopPad;
 
         // ── Section 1: HOST NETWORK ───────────────────────────────────────────
-        g.DrawString("HOST NETWORK", headerFont, accentBrush, LabelX, y); y += headerH;
-        Row(g, "Adapter", _hostAdapter, y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "IP",      _hostIp,      y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "Gateway", _gateway,     y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "DNS",     _dns,         y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
+        g.DrawString("HOST NETWORK", _headerFont, _accentBrush, LabelX, y); y += headerH;
+        Row(g, "Adapter", _hostAdapter, y, valueX); y += rowH;
+        Row(g, "IP",      _hostIp,      y, valueX); y += rowH;
+        Row(g, "Gateway", _gateway,     y, valueX); y += rowH;
+        Row(g, "DNS",     _dns,         y, valueX); y += rowH;
 
-        g.DrawLine(dividerPen, LabelX, y + SepH / 2, _canvas.Width - LabelX, y + SepH / 2);
+        g.DrawLine(_dividerPen, LabelX, y + SepH / 2, _canvas.Width - LabelX, y + SepH / 2);
         y += SepH;
 
         // ── Section 2: VIRTUAL MACHINE ────────────────────────────────────────
-        g.DrawString("VIRTUAL MACHINE", headerFont, accentBrush, LabelX, y); y += headerH;
-        Row(g, "VM",     _vmName,     y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "Switch", _switchName, y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "Rule",   _ruleName,   y, valueX, labelFont, valueFont, labelBrush, valueBrush); y += rowH;
-        Row(g, "IP",     _vmIp,       y, valueX, labelFont, valueFont, labelBrush, valueBrush);
+        g.DrawString("VIRTUAL MACHINE", _headerFont, _accentBrush, LabelX, y); y += headerH;
+        Row(g, "VM",     _vmName,     y, valueX); y += rowH;
+        Row(g, "Switch", _switchName, y, valueX); y += rowH;
+        Row(g, "Rule",   _ruleName,   y, valueX); y += rowH;
+        Row(g, "IP",     _vmIp,       y, valueX);
     }
 
-    private static void Row(Graphics g, string label, string value, int y, int valueX,
-                             Font lf, Font vf, Brush lb, Brush vb)
+    private void Row(Graphics g, string label, string value, int y, int valueX)
     {
-        g.DrawString(label, lf, lb, LabelX, y);
-        g.DrawString(value, vf, vb, valueX, y);
+        g.DrawString(label, _labelFont, _labelBrush, LabelX, y);
+        g.DrawString(value, _valueFont, _valueBrush, valueX, y);
     }
 }

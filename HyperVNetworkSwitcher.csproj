@@ -23,11 +23,20 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- CS1591: don't warn about any members still missing XML doc comments -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- InvariantGlobalization avoids initialising/loading ICU at runtime, trimming steady-state
+         private memory (~16 MB -> ~13 MB measured).  Safe here: no localized UI, and all
+         formatting/parsing is ordinal/invariant.  (It does not shrink the bundled self-contained
+         file without trimming, which WinForms doesn't support cleanly.)
+
+         NOTE: EnableCompressionInSingleFile was tried and reverted — it shrank the exe to ~49 MB
+         but decompresses assemblies into memory at startup, raising steady-state RAM by ~40 MB.
+         For an always-on tray app, lower RAM matters more than a smaller file on disk. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.8" />
   </ItemGroup>
 
   <ItemGroup>

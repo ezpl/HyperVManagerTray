@@ -183,12 +183,11 @@ schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
 
 ### External libraries
 
-The only third-party packages are two Microsoft NuGet libraries; everything else is the .NET base class library.
+The only third-party package is one Microsoft NuGet library; everything else is the .NET base class library.
 
 | Package | Version | Author | Purpose | License |
 |---|---|---|---|---|
-| [Microsoft.Extensions.Logging](https://www.nuget.org/packages/Microsoft.Extensions.Logging) | 10.0.8 | Microsoft | Logging abstraction used throughout | MIT |
-| [Microsoft.Extensions.Logging.Console](https://www.nuget.org/packages/Microsoft.Extensions.Logging.Console) | 10.0.8 | Microsoft | Console sink (dev-time diagnostics) | MIT |
+| [Microsoft.Extensions.Logging](https://www.nuget.org/packages/Microsoft.Extensions.Logging) | 10.0.8 | Microsoft | Logging abstraction; output goes to a small custom file sink | MIT |
 
 No non-Microsoft / community dependencies are used.
 
