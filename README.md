@@ -177,6 +177,17 @@ Metrics refresh every ~2 s **only while the dashboard is open**, so a closed das
 
 ---
 
+## Tests
+
+```powershell
+dotnet test
+```
+
+`Tests/` is a small xUnit project covering the pure logic — CIDR/MAC matching (`AdapterMatcher`),
+the VM status maths (`VmStatus`), and the `config.json` contract (including `autoStart`). It
+**links** the relevant source files rather than referencing the WinUI app, so `dotnet test` needs
+no Windows App SDK runtime. The UI/Hyper-V layers are exercised by building and running the app.
+
 ## Development notes
 
 Non-obvious Hyper-V / Windows-networking gotchas and the reasoning behind the design choices

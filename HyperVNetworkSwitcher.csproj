@@ -44,6 +44,15 @@
     </Content>
   </ItemGroup>
 
+  <!-- The unit-test project lives under Tests\ (its own csproj). Keep its sources out of the
+       app build; the test project links the specific source files it needs instead. -->
+  <ItemGroup>
+    <Compile   Remove="Tests\**\*.cs" />
+    <Content   Remove="Tests\**\*" />
+    <None      Remove="Tests\**\*" />
+    <Page      Remove="Tests\**\*" />
+  </ItemGroup>
+
   <!-- Publish properties: ReadyToRun on Release; trimming OFF (WinUI + reflection-y bits are
        fragile to trim). JSON uses a source-generated context so config still works without it. -->
   <PropertyGroup>

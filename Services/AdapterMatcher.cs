@@ -275,7 +275,7 @@ public static class AdapterMatcher
     }
 
     // Formats "AABBCCDDEEFF" → "AA:BB:CC:DD:EE:FF"
-    private static string FormatMac(string raw)
+    internal static string FormatMac(string raw)
     {
         var clean = raw.Replace(":", "").Replace("-", "").ToUpperInvariant();
         if (clean.Length != 12) return raw; // not a standard 48-bit MAC — return as-is
@@ -327,7 +327,7 @@ public static class AdapterMatcher
         return HasMarker(nic.Name) || HasMarker(nic.Description);
     }
 
-    private static bool IsInCidr(IPAddress address, string cidr)
+    internal static bool IsInCidr(IPAddress address, string cidr)
     {
         var parts = cidr.Split('/');
         if (parts.Length != 2 || !int.TryParse(parts[1], out int prefixLen)) return false;
