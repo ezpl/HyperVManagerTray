@@ -35,7 +35,7 @@ It also includes a **WinUI 3 dashboard** (left-click the tray icon) that shows t
 
 1. Edit `config.json` (lives next to the `.exe`) to describe your networks and VMs — see [Configuration](#configuration) below.
 2. Run or publish the application (see below).
-3. A tray icon appears. Right-click it at any time to see status, override manually, or add new network rules.
+3. A tray icon appears. **Left-click** it for the status dashboard + VM controls; **right-click** for the menu (manual override, add a network rule, etc.).
 
 ---
 
@@ -44,7 +44,6 @@ It also includes a **WinUI 3 dashboard** (left-click the tray icon) that shows t
 ### Development / debug run
 
 ```powershell
-cd HyperVNetworkSwitcher
 dotnet run
 ```
 
@@ -177,6 +176,28 @@ Metrics refresh every ~2 s **only while the dashboard is open**, so a closed das
 
 ---
 
+## Project structure
+
+```
+HyperVNetworkSwitcher/
+├─ App.xaml(.cs)            WinUI app entry point — owns services, tray icon, dashboard
+├─ MainWindow.xaml(.cs)     hidden host window (keeps the app alive)
+├─ Services/                UI-agnostic logic (no WinUI dependency)
+│  ├─ NetworkMonitor.cs        watches NICs, debounces, drives switch changes
+│  ├─ AdapterMatcher.cs        rule evaluation (MAC + CIDR), adapter selection
+│  ├─ HyperVManager.cs         runs Hyper-V cmdlets via powershell.exe; VM power + metrics
+│  ├─ ConfigManager.cs         loads/watches config.json
+│  ├─ StartupManager.cs        "run at startup" scheduled task
+│  ├─ ProcessRunner.cs         shared process-spawning helper (timeout, stream capture)
+│  └─ FileLogger.cs            minimal ILogger file sink
+├─ Models/                  POCOs: AppConfig, NetworkRule, VmTarget, VmStatus
+├─ UI/                      DashboardWindow (Mica popup + VM cards), TrayMenu
+├─ Helpers/                 AppColors, IconGenerator, NativeMethods, RelayCommand
+├─ Tests/                   xUnit tests (links the pure Services/Models sources)
+├─ installer/              per-user Inno Setup installer (.iss + build script)
+└─ config.json             sample config (shipped next to the exe)
+```
+
 ## Tests
 
 ```powershell
@@ -236,7 +257,8 @@ Each switch change, rule evaluation, and error is recorded there.
 
 | Symptom | Likely cause |
 |---|---|
-| UAC prompt on every launch | Normal — required for Hyper-V access |
+| UAC prompt on every launch | Normal — required for Hyper-V access. Enable **Run on startup** for a prompt-free elevated auto-start. |
 | Status shows "Fallback" on the office LAN | MAC or CIDR in the rule does not match — check `switcher.log` |
-| VM IP shows "no IP" | VM is powered off, or DHCP hasn't responded yet — wait a few seconds and Force Re-evaluate |
+| VM card shows "Unknown" / no CPU·memory meters | The `config.json` VM name doesn't match a VM on the host, or the VM isn't running (only running VMs report metrics) |
 | Switch change fails silently | User account lacks Hyper-V Administrator rights |
+| Dashboard opens blank / `0xC000027B` at startup | The `.pri` resource index isn't next to the exe — re-run the installer or copy the whole publish folder |

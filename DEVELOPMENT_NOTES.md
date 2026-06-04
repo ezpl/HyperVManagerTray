@@ -4,7 +4,7 @@
 > design choices — so the same mistakes aren't re-made. Read this before changing how the
 > app talks to Hyper-V or the host network.
 
-_Last updated: 2026-06-02._
+_Last updated: 2026-06-04 (WinUI 3 migration, Inno Setup installer, `Services/` layout, unit tests)._
 
 ---
 
@@ -185,3 +185,7 @@ The app is already cheap: **~0 idle CPU** (fully event-driven — `NetworkChange
   **not** match a cable rule (different MAC) — that's intended; it falls back to NAT.
 - Verify a healthy bridge with: one `Up` `vEthernet (Bridged)` carrying the LAN IP, and no
   numbered `vEthernet (Bridged) N` siblings.
+- **Automated tests** (`dotnet test`) cover the pure logic only — CIDR/MAC matching, `VmStatus`
+  maths, and the `config.json` contract. The `Tests/` project **links** those source files (no
+  ProjectReference to the WinUI app), so it runs without the Windows App SDK runtime. The
+  UI/Hyper-V layers have no automated coverage — exercise them by building and running the app.
