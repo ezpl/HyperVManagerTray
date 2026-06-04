@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using HyperVNetworkSwitcher.Models;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVNetworkSwitcher.Services;
 
 /// <summary>
 /// Runs Hyper-V PowerShell cmdlets by spawning powershell.exe as a child process.
@@ -132,8 +132,8 @@ public sealed class HyperVManager : IDisposable
             "$ProgressPreference='SilentlyContinue'; " +
             $"Get-VM -Name {string.Join(",", quoted)} -ErrorAction SilentlyContinue | ForEach-Object {{ " +
             "[PSCustomObject]@{ Name = $_.Name; State = $_.State.ToString(); Cpu = [int]$_.CPUUsage; " +
-            "MemAssigned = [int64]$_.MemoryAssigned; MemDemand = [int64]$_.MemoryDemand; " +
-            "MemMax = [int64]$_.MemoryMaximum; Uptime = $_.Uptime.ToString() } } | ConvertTo-Json -Depth 3";
+            "MemAssigned = [int64]$_.MemoryAssigned; MemMax = [int64]$_.MemoryMaximum; " +
+            "Uptime = $_.Uptime.ToString() } } | ConvertTo-Json -Depth 3";
 
         var (ok, output) = await RunAsync(script);
         return DeserializeArrayOrObject<VmStatus>(ok ? output : "");

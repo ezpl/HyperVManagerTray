@@ -4,7 +4,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using HyperVNetworkSwitcher.Models;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVNetworkSwitcher.Services;
 
 /// <summary>Result of evaluating config rules against the current host network state.</summary>
 public sealed record MatchResult(string RuleName, string VirtualSwitch, IReadOnlyList<string> TargetVms)

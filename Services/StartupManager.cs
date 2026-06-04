@@ -1,6 +1,6 @@
 using Microsoft.Win32;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVNetworkSwitcher.Services;
 
 /// <summary>
 /// Manages "run at Windows logon" for this elevated app.

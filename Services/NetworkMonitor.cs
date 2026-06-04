@@ -2,7 +2,7 @@ using System.Net.NetworkInformation;
 using HyperVNetworkSwitcher.Models;
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVNetworkSwitcher.Services;
 
 /// <summary>
 /// Watches the host's network state (via <see cref="NetworkChange"/>), re-evaluates the

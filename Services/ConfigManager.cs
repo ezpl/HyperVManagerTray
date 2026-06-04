@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 using HyperVNetworkSwitcher.Models;
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVNetworkSwitcher.Services;
 
 /// <summary>
 /// Loads <c>config.json</c>, exposes the current <see cref="AppConfig"/>, and watches the file

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using HyperVNetworkSwitcher.Helpers;
+using HyperVNetworkSwitcher.Services;
 using HyperVNetworkSwitcher.UI;
 
 namespace HyperVNetworkSwitcher;
@@ -29,6 +30,7 @@ public partial class App : Application
 
     private string _exeDir = AppContext.BaseDirectory;
     private bool   _bridged;
+    private System.Drawing.Icon? _iconImage;
 
     public App() => InitializeComponent();
 
@@ -81,7 +83,7 @@ public partial class App : Application
     private void InitTrayIcon()
     {
         _trayIcon = (TaskbarIcon)Resources["TrayIcon"];
-        _trayIcon.Icon = new System.Drawing.Icon(IconGenerator.GenerateAndSave(_exeDir, bridged: false));
+        SetTrayIcon(bridged: false);
 
         _menu = new TrayMenu(_config!, _monitor!, _hyperV!, _startup, OnExit);
         _trayIcon.ContextFlyout     = _menu.Flyout;
@@ -101,11 +103,20 @@ public partial class App : Application
             if (bridged != _bridged)
             {
                 _bridged = bridged;
-                _trayIcon!.Icon = new System.Drawing.Icon(IconGenerator.GenerateAndSave(_exeDir, bridged));
+                SetTrayIcon(bridged);
             }
             _trayIcon!.ToolTipText = $"HyperV Network Switcher: {result.VirtualSwitch}";
             _dashboard?.OnSwitchApplied(result);
         });
+    }
+
+    /// <summary>Swaps the tray icon (blue = bridged, grey = fallback), disposing the previous one.</summary>
+    private void SetTrayIcon(bool bridged)
+    {
+        var previous = _iconImage;
+        _iconImage = new System.Drawing.Icon(IconGenerator.GenerateAndSave(_exeDir, bridged));
+        _trayIcon!.Icon = _iconImage;
+        previous?.Dispose();
     }
 
     // ── Dashboard ───────────────────────────────────────────────────────────────
@@ -133,6 +144,7 @@ public partial class App : Application
     private void OnExit()
     {
         _trayIcon?.Dispose();
+        _iconImage?.Dispose();
         _monitor?.Dispose();
         _config?.Dispose();
         _hyperV?.Dispose();

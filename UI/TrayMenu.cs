@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.UI.Xaml.Controls;
 using HyperVNetworkSwitcher.Helpers;
 using HyperVNetworkSwitcher.Models;
+using HyperVNetworkSwitcher.Services;
 
 namespace HyperVNetworkSwitcher.UI;
 

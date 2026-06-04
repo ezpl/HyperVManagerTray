@@ -10,7 +10,6 @@ public sealed class VmStatus
     public string  State       { get; set; } = "Unknown";  // Running, Off, Paused, Saved, …
     public int     Cpu         { get; set; }                // % of host
     public long    MemAssigned { get; set; }                // bytes
-    public long    MemDemand   { get; set; }                // bytes
     public long    MemMax      { get; set; }                // bytes
     public string? Uptime      { get; set; }
     public long    VhdBytes    { get; set; }                // filled by the separate VHD query

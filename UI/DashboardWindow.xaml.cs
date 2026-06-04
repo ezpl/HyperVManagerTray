@@ -1,4 +1,3 @@
-using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -6,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using HyperVNetworkSwitcher.Helpers;
 using HyperVNetworkSwitcher.Models;
+using HyperVNetworkSwitcher.Services;
 
 namespace HyperVNetworkSwitcher.UI;
 
