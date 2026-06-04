@@ -52,31 +52,27 @@ dotnet run
 
 ### Install (recommended)
 
-Run the included install script from the project root:
+A **per-user Inno Setup installer** builds from `installer\` (no admin needed to install — the
+app elevates itself at runtime):
 
 ```powershell
-.\Install.ps1
+# one-time, if Inno Setup is missing:
+winget install JRSoftware.InnoSetup
+
+.\installer\build-installer.ps1 -Version 2.0.0
 ```
 
-What it does:
-1. Stops any running instance of the app
-2. Publishes a self-contained WinUI 3 build (`dotnet publish`) — a **folder** of files (exe + Windows App SDK + the `.pri` resource index), not a single exe
-3. Mirrors that folder to `%LOCALAPPDATA%\Programs\HyperVNetworkSwitcher\`, **preserving** any existing `config.json`
-4. Removes the obsolete `HKCU\Run` startup value left by older versions
-5. Asks whether to launch the app immediately (UAC prompt will appear)
+This publishes the app fully self-contained (.NET + Windows App SDK bundled, no runtime install
+needed on the target) and compiles `installer\Output\HyperVNetworkSwitcher-Setup.exe`. Run that
+to install to `%LocalAppData%\Programs\HyperVNetworkSwitcher`. The setup offers an optional
+**Run at startup** (a `/RL HIGHEST` logon task — one UAC prompt, only if ticked) and preserves
+any existing `config.json` on upgrade. See [`installer/README.md`](installer/README.md) for how
+the elevation is handled.
 
-To install and launch in one step:
-
-```powershell
-.\Install.ps1 -Launch
-```
-
-> **No runtime install required** on the target machine — the published build is fully self-contained (.NET + Windows App SDK are bundled).
-
-### Publish manually
+### Publish manually (no installer)
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained true
+dotnet publish -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true
 ```
 
 Output folder: `bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\` (run `HyperVNetworkSwitcher.exe` from there; the `.pri` next to it is required).

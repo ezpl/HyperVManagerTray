@@ -12,6 +12,9 @@ obj/
 # Publish output
 publish/
 
+# Built installer
+installer/Output/
+
 # Logs produced at runtime (kept next to exe during dev)
 *.log
 

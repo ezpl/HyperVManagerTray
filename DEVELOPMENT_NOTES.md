@@ -120,7 +120,7 @@ started it (and didn't even show in Task Manager until reopened).
 
 **Fix (`StartupManager`):** a Scheduled Task with `/SC ONLOGON /RL HIGHEST`. It runs in the
 user's interactive session (tray icon appears) with **no UAC prompt**. The obsolete `Run` value
-is cleaned up on toggle and by `Install.ps1`.
+is cleaned up on toggle (`StartupManager`).
 
 ### 10. Pre-`Application.Run()` there is no WinForms `SynchronizationContext`
 `SynchronizationContext.Current` is null before the message loop starts, so posting UI updates
@@ -140,7 +140,7 @@ control cards. The network/Hyper-V core (`NetworkMonitor`, `AdapterMatcher`, `Hy
 Gotchas hit (and how they're handled):
 - **The `.pri` resource index.** An unpackaged WinUI publish must ship `<App>.pri` next to the exe,
   or `Microsoft.UI.Xaml.dll` throws a stowed exception **0xC000027B** at startup. The `.csproj` has
-  a `CopyAppPriToPublish` target; `Install.ps1` verifies it landed.
+  a `CopyAppPriToPublish` target; `installer\build-installer.ps1` verifies it landed.
 - **WinForms can't host a WinUI 3 window**, so this was a full UI migration, not a bolt-on. A hidden
   `MainWindow` keeps the app alive while only the tray icon + popup are visible.
 - **Native tray menu caveat (H.NotifyIcon):** the right-click menu is rebuilt as a native Win32 menu
@@ -150,7 +150,8 @@ Gotchas hit (and how they're handled):
   `NetworkMonitor.SwitchApplied` still fires on a background thread.
 - **No `MessageBox`** in WinUI — small `MessageBoxW` P/Invokes in `NativeMethods` cover errors/confirms.
 - **Publish is a folder, not a single file.** `PublishSingleFile`/`EnableCompressionInSingleFile`
-  don't apply; `Install.ps1` mirrors the folder (robocopy, `/XF config.json`). `PublishTrimmed=false`
+  don't apply; the per-user Inno Setup installer copies the folder (config.json installed
+  `onlyifdoesntexist` so user edits survive upgrades). `PublishTrimmed=false`
   (WinUI + reflection-y JSON trim poorly) — so reflection-based `System.Text.Json` is kept;
   `PublishReadyToRun=true` on Release for faster startup.
 - **Dashboard polling** (CPU/mem/VHD via `Get-VM`) runs on a `DispatcherTimer` **only between
