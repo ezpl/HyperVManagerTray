@@ -111,11 +111,10 @@ schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
 
 ## Dashboard (left-click the tray icon)
 
-A borderless Mica popup near the tray:
+A borderless Mica popup titled **"Hyper-V Manager"** near the tray:
 
 - **HOST NETWORK** — Adapter, IP, Gateway, DNS of the active host network.
-- **VIRTUAL MACHINE** — the matched Switch and Rule (or "Fallback").
-- **Per-VM cards** (one per configured VM) — state (Running/Off/Paused/Saved), CPU / memory / VHD-size meters when running, and power buttons appropriate to the state: **Start**, **Shutdown**, **Pause**, **Resume**, **Save**, **Connect**, **Start & Connect**.
+- **Per-VM cards** (one per configured VM) — switch name and active rule shown as a subtitle; state (Running/Off/Paused/Saved); CPU / memory / VHD-size meters when running; power buttons appropriate to the state: **Start**, **Shutdown**, **Pause**, **Resume**, **Save**, **Connect**, **Start & Connect**.
 
 Metrics refresh every ~2 s **only while the dashboard is open**, so a closed dashboard costs no CPU.
 

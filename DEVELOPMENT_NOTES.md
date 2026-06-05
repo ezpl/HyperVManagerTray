@@ -4,7 +4,7 @@
 > design choices — so the same mistakes aren't re-made. Read this before changing how the
 > app talks to Hyper-V or the host network.
 
-_Last updated: 2026-06-04 (WinUI 3 migration, Inno Setup installer, `Services/` layout, unit tests)._
+_Last updated: 2026-06-05 (WinUI 3 migration, Inno Setup installer, `Services/` layout, unit tests, Multiplexor adapter fix, icon redesign, dashboard unification)._
 
 ---
 
