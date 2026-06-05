@@ -104,8 +104,7 @@ public sealed class NetworkMonitor : IDisposable
     public async Task ManualOverrideAsync(string vmName, string switchName)
     {
         _logger.LogInformation("Manual override: {Vm} → {Switch}", vmName, switchName);
-        var vm = _config.Current.VirtualMachines.FirstOrDefault(v => v.Name == vmName);
-        if (vm is null) return;
+        if (_config.Current.VirtualMachines.FirstOrDefault(v => v.Name == vmName) is not { } vm) return;
 
         await _hyperV.ApplySwitchAsync(vmName, vm.NicName, switchName);
 

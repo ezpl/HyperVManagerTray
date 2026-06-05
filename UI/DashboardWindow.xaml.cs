@@ -310,10 +310,9 @@ public sealed partial class DashboardWindow : Window
         var sw = _monitor.LastApplied?.VirtualSwitch;
         if (!string.IsNullOrEmpty(sw)) await _hyperV.ApplySwitchAsync(vm.Name, vm.NicName, sw);
 
-        var vmName = vm.Name;
         try
         {
-            Process.Start(new ProcessStartInfo("vmconnect.exe", $"localhost \"{vmName}\"")
+            Process.Start(new ProcessStartInfo("vmconnect.exe", $"localhost \"{vm.Name}\"")
             {
                 UseShellExecute = true,
             });

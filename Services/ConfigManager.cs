@@ -67,7 +67,8 @@ public sealed class ConfigManager : IDisposable
     {
         _logger.LogInformation("Config file changed — reloading");
         Load();
-        ConfigReloaded?.Invoke(this, _config);
+        try { ConfigReloaded?.Invoke(this, _config); }
+        catch (Exception ex) { _logger.LogError(ex, "A ConfigReloaded subscriber threw an exception"); }
     }
 
     /// <summary>

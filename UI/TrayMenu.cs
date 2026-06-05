@@ -109,12 +109,14 @@ internal sealed class TrayMenu
     private void RebuildOverrideMenu()
     {
         _overrideMenu.Items.Clear();
+
+        var switches = new HashSet<string> { _config.Current.Fallback.VirtualSwitch };
+        foreach (var rule in _config.Current.Rules) switches.Add(rule.VirtualSwitch);
+        var orderedSwitches = switches.Order().ToList();
+
         foreach (var vm in _config.Current.VirtualMachines)
         {
-            var switches = new HashSet<string> { _config.Current.Fallback.VirtualSwitch };
-            foreach (var rule in _config.Current.Rules) switches.Add(rule.VirtualSwitch);
-
-            foreach (var sw in switches.Order())
+            foreach (var sw in orderedSwitches)
             {
                 var vmName = vm.Name;
                 var swName = sw;

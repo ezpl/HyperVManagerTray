@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace HyperVManagerTray.Services;
 
@@ -50,14 +50,17 @@ internal static class ProcessRunner
     private static async Task<ProcessResult> RunAsync(ProcessStartInfo psi, TimeSpan timeout)
     {
         using var proc = new Process { StartInfo = psi };
+        bool started;
         try
         {
-            proc.Start();
+            started = proc.Start();
         }
         catch (Exception ex)
         {
             return new ProcessResult(false, -1, "", ex.Message);
         }
+        if (!started)
+            return new ProcessResult(false, -1, "", "Process did not start");
 
         // Read both streams concurrently to avoid a full-pipe deadlock.
         var stdoutTask = proc.StandardOutput.ReadToEndAsync();
@@ -71,6 +74,10 @@ internal static class ProcessRunner
         catch (OperationCanceledException)
         {
             try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+            // Drain the output tasks so their internal StreamReaders are fully consumed
+            // before proc is disposed by the using block.  Killing the process closes the
+            // pipes, so these awaits complete quickly with whatever was buffered.
+            try { await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false); } catch { }
             return new ProcessResult(false, -1, "", $"Timed out after {timeout.TotalSeconds:0} s");
         }
 
