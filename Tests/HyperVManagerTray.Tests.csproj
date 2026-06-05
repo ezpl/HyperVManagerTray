@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- Link the pure, WinUI-free source files directly into the test assembly.  This keeps the
+       tests isolated from the WinUI app (no ProjectReference, so 'dotnet test' needs no Windows
+       App SDK runtime) while still exercising the real production code. -->
+  <ItemGroup>
+    <Compile Include="..\Services\AdapterMatcher.cs"  Link="Linked\AdapterMatcher.cs" />
+    <Compile Include="..\Services\ConfigManager.cs"   Link="Linked\ConfigManager.cs" />
+    <Compile Include="..\Helpers\UptimeFormatter.cs"  Link="Linked\UptimeFormatter.cs" />
+    <Compile Include="..\Models\AppConfig.cs"         Link="Linked\AppConfig.cs" />
+    <Compile Include="..\Models\NetworkRule.cs"       Link="Linked\NetworkRule.cs" />
+    <Compile Include="..\Models\VmTarget.cs"          Link="Linked\VmTarget.cs" />
+    <Compile Include="..\Models\VmStatus.cs"          Link="Linked\VmStatus.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.8" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

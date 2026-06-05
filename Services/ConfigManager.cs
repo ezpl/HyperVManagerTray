@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Loads <c>config.json</c>, exposes the current <see cref="AppConfig"/>, and watches the file
@@ -67,7 +67,8 @@ public sealed class ConfigManager : IDisposable
     {
         _logger.LogInformation("Config file changed — reloading");
         Load();
-        ConfigReloaded?.Invoke(this, _config);
+        try { ConfigReloaded?.Invoke(this, _config); }
+        catch (Exception ex) { _logger.LogError(ex, "A ConfigReloaded subscriber threw an exception"); }
     }
 
     /// <summary>
@@ -103,6 +104,60 @@ public sealed class ConfigManager : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save new rule '{Name}'", rule.Name);
+            throw;
+        }
+        finally
+        {
+            _watcher.EnableRaisingEvents = true;
+        }
+    }
+
+    /// <summary>
+    /// Appends a new <see cref="VmTarget"/> to config.json and reloads.
+    /// Does nothing if a VM with the same name is already present.
+    /// </summary>
+    public void AddVmToConfig(string name, string nicName)
+    {
+        if (_config.VirtualMachines.Any(v =>
+                v.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogInformation("AddVmToConfig: '{Name}' is already in config — skipping.", name);
+            return;
+        }
+
+        _watcher.EnableRaisingEvents = false;
+        try
+        {
+            var newVm = new VmTarget
+            {
+                Name    = name,
+                NicName = string.IsNullOrWhiteSpace(nicName) ? "Network Adapter" : nicName,
+            };
+
+            var updated = new AppConfig
+            {
+                VirtualMachines = [.. _config.VirtualMachines, newVm],
+                Rules           = _config.Rules,
+                Fallback        = _config.Fallback,
+            };
+
+            var writeOptions = new JsonSerializerOptions
+            {
+                WriteIndented            = true,
+                PropertyNamingPolicy     = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition   = JsonIgnoreCondition.WhenWritingNull,
+                Converters               = { new JsonStringEnumConverter() }
+            };
+
+            File.WriteAllText(_configPath, JsonSerializer.Serialize(updated, writeOptions));
+            _logger.LogInformation("VM '{Name}' added and saved to {Path}", name, _configPath);
+
+            Load();
+            ConfigReloaded?.Invoke(this, _config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save new VM '{Name}'", name);
             throw;
         }
         finally

@@ -1,4 +1,4 @@
-# HyperV Network Switcher
+# Hyper-V Manager Tray
 
 A Windows system-tray application that automatically connects your Hyper-V virtual machine to the correct virtual network switch based on which physical network the host is connected to.
 
@@ -18,14 +18,16 @@ When you move between networks — office LAN, home Wi-Fi, mobile hotspot — th
 
 The app watches for network changes in the background. The moment the host connects to a recognised network, the VM's NIC is silently reconnected to the right Hyper-V virtual switch. If no rule matches, it falls back to the Default Switch automatically.
 
+It also includes a **WinUI 3 dashboard** (left-click the tray icon) that shows the live host-network/switch status and a control card per configured VM — state, CPU / memory / VHD-size meters, and power buttons (Start, Shutdown, Pause, Resume, Save, Connect, Start & Connect). A rule can optionally **auto-start** its VMs when its network becomes active.
+
 ---
 
 ## Requirements
 
 - Windows 11 host with **Hyper-V** enabled
 - The user account must be a member of the **Hyper-V Administrators** group (or run as Administrator)
-- [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0) (or use the self-contained publish below)
 - The two virtual switches **Bridged** and **Default Switch** must exist in Hyper-V Virtual Switch Manager
+- To **build** from source: the .NET 10 SDK with the Windows App SDK workload. The published app is **self-contained** — no .NET or Windows App Runtime install required on the target.
 
 ---
 
@@ -33,7 +35,7 @@ The app watches for network changes in the background. The moment the host conne
 
 1. Edit `config.json` (lives next to the `.exe`) to describe your networks and VMs — see [Configuration](#configuration) below.
 2. Run or publish the application (see below).
-3. A tray icon appears. Right-click it at any time to see status, override manually, or add new network rules.
+3. A tray icon appears. **Left-click** it for the status dashboard + VM controls; **right-click** for the menu (manual override, add a network rule, etc.).
 
 ---
 
@@ -42,7 +44,6 @@ The app watches for network changes in the background. The moment the host conne
 ### Development / debug run
 
 ```powershell
-cd HyperVNetworkSwitcher
 dotnet run
 ```
 
@@ -50,34 +51,30 @@ dotnet run
 
 ### Install (recommended)
 
-Run the included install script from the project root:
+A **per-user Inno Setup installer** builds from `installer\` (no admin needed to install — the
+app elevates itself at runtime):
 
 ```powershell
-.\Install.ps1
+# one-time, if Inno Setup is missing:
+winget install JRSoftware.InnoSetup
+
+.\installer\build-installer.ps1 -Version 2.0.0
 ```
 
-What it does:
-1. Stops any running instance of the app
-2. Publishes a self-contained single-file executable (`dotnet publish`)
-3. Copies the executable to `%LOCALAPPDATA%\Programs\HyperVNetworkSwitcher\`
-4. Copies `config.json` to the same folder — **only if one does not already exist there** (your edited config is never overwritten)
-5. Asks whether to launch the app immediately (UAC prompt will appear)
+This publishes the app fully self-contained (.NET + Windows App SDK bundled, no runtime install
+needed on the target) and compiles `installer\Output\HyperVManagerTray-Setup.exe`. Run that
+to install to `%LocalAppData%\Programs\HyperVManagerTray`. The setup offers an optional
+**Run at startup** (a `/RL HIGHEST` logon task — one UAC prompt, only if ticked) and preserves
+any existing `config.json` on upgrade. See [`installer/README.md`](installer/README.md) for how
+the elevation is handled.
 
-To install and launch in one step:
+### Publish manually (no installer)
 
 ```powershell
-.\Install.ps1 -Launch
+dotnet publish -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true
 ```
 
-> **No .NET installation required** on the target machine — the published exe is fully self-contained.
-
-### Publish manually
-
-```powershell
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
-```
-
-Output: `bin\Release\net10.0-windows\win-x64\publish\HyperVNetworkSwitcher.exe`
+Output folder: `bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\` (run `HyperVManagerTray.exe` from there; the `.pri` next to it is required).
 
 ### Auto-start with Windows
 
@@ -89,47 +86,48 @@ The toggle is equivalent to:
 
 ```powershell
 # Enable
-schtasks /Create /TN "HyperVNetworkSwitcher" /TR "\"%LOCALAPPDATA%\Programs\HyperVNetworkSwitcher\HyperVNetworkSwitcher.exe\"" /SC ONLOGON /RL HIGHEST /F
+schtasks /Create /TN "HyperVManagerTray" /TR "\"%LOCALAPPDATA%\Programs\HyperVManagerTray\HyperVManagerTray.exe\"" /SC ONLOGON /RL HIGHEST /F
 # Disable
-schtasks /Delete /TN "HyperVNetworkSwitcher" /F
+schtasks /Delete /TN "HyperVManagerTray" /F
 ```
 
-**Where it's stored** — the task named `HyperVNetworkSwitcher` lives in:
+**Where it's stored** — the task named `HyperVManagerTray` lives in:
 
 | | |
 |---|---|
-| **Task Scheduler** | Task Scheduler Library → `HyperVNetworkSwitcher` |
-| **On disk** | `C:\Windows\System32\Tasks\HyperVNetworkSwitcher` (XML definition) |
-| **Registry** | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\HyperVNetworkSwitcher` |
+| **Task Scheduler** | Task Scheduler Library → `HyperVManagerTray` |
+| **On disk** | `C:\Windows\System32\Tasks\HyperVManagerTray` (XML definition) |
+| **Registry** | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\HyperVManagerTray` |
 
 To inspect or verify it from PowerShell:
 
 ```powershell
-schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
+schtasks /Query /TN "HyperVManagerTray" /V /FO LIST
 ```
 
-> **Migration note:** older versions wrote a value named `HyperVNetworkSwitcher` under `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`. That entry never worked for this elevated app and is now removed automatically the first time you toggle **Run on startup**.
+> **Migration note:** older versions wrote a value named `HyperVManagerTray` under `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`. That entry never worked for this elevated app and is now removed automatically the first time you toggle **Run on startup**.
 
 ---
 
-## System tray menu
+## Dashboard (left-click the tray icon)
+
+A borderless Mica popup titled **"Hyper-V Manager"** near the tray:
+
+- **HOST NETWORK** — Adapter, IP, Gateway, DNS of the active host network.
+- **Per-VM cards** (one per configured VM) — switch name and active rule shown as a subtitle; state (Running/Off/Paused/Saved); CPU / memory / VHD-size meters when running; power buttons appropriate to the state: **Start**, **Shutdown**, **Pause**, **Resume**, **Save**, **Connect**, **Start & Connect**.
+
+Metrics refresh every ~2 s **only while the dashboard is open**, so a closed dashboard costs no CPU.
+
+## Context menu (right-click the tray icon)
 
 | Item | Description |
 |---|---|
-| **HOST NETWORK** *(section header)* | |
-| Adapter | Name of the active host network adapter |
-| IP | IPv4 address of the host on the current network |
-| Gateway | Default gateway address |
-| DNS | Up to two DNS server addresses, separated by `·` |
-| **VIRTUAL MACHINE** *(section header)* | |
-| VM | Name of the managed Hyper-V virtual machine |
-| Switch | Currently connected Hyper-V virtual switch |
-| Rule | Name of the matched config rule (or "Fallback") |
-| IP | IPv4 address inside the VM (refreshes ~3 s after each switch change) |
 | **Force Re-evaluate** | Re-runs rule matching and applies any change immediately |
-| **Manual Override ▶** | Sub-menu to force a specific VM → switch combination |
-| **Add current network as bridged** | Detects the current adapter, shows a confirmation dialog, and appends a new Bridged rule to `config.json` |
-| **Open config.json** | Opens the config file in your default `.json` editor (falls back to Explorer if none is set) |
+| **VM Power ▶** | Per-VM submenu: Start, Start & Connect, Shutdown, Pause, Resume, Save |
+| **Manual Override ▶** | Force a specific VM → switch combination |
+| **Add current network as bridged** | Detects the current adapter, confirms, and appends a new Bridged rule to `config.json` |
+| **Open config.json** | Opens the config file in your default `.json` editor (falls back to Explorer) |
+| **Open log file** | Opens `switcher.log` |
 | **Reload config** | Hot-reloads `config.json` without restarting |
 | **Run on startup** | Toggle auto-start at Windows login |
 | **Exit** | Stops the application |
@@ -158,7 +156,8 @@ schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
         "ipCidr":      "10.0.0.0/23"         // Host IP must fall in this range (optional)
       },
       "virtualSwitch": "Bridged",          // Hyper-V switch to connect to
-      "targetVms":     ["MyVM"]            // VMs to reconnect
+      "targetVms":     ["MyVM"],           // VMs to reconnect
+      "autoStart":     false               // start/resume targetVms when this rule activates
     }
   ],
   "fallback": {
@@ -176,6 +175,39 @@ schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
 
 ---
 
+## Project structure
+
+```
+HyperVManagerTray/
+├─ App.xaml(.cs)            WinUI app entry point — owns services, tray icon, dashboard
+├─ MainWindow.xaml(.cs)     hidden host window (keeps the app alive)
+├─ Services/                UI-agnostic logic (no WinUI dependency)
+│  ├─ NetworkMonitor.cs        watches NICs, debounces, drives switch changes
+│  ├─ AdapterMatcher.cs        rule evaluation (MAC + CIDR), adapter selection
+│  ├─ HyperVManager.cs         runs Hyper-V cmdlets via powershell.exe; VM power + metrics
+│  ├─ ConfigManager.cs         loads/watches config.json
+│  ├─ StartupManager.cs        "run at startup" scheduled task
+│  ├─ ProcessRunner.cs         shared process-spawning helper (timeout, stream capture)
+│  └─ FileLogger.cs            minimal ILogger file sink
+├─ Models/                  POCOs: AppConfig, NetworkRule, VmTarget, VmStatus
+├─ UI/                      DashboardWindow (Mica popup + VM cards), TrayMenu
+├─ Helpers/                 AppColors, IconGenerator, NativeMethods, RelayCommand
+├─ Tests/                   xUnit tests (links the pure Services/Models sources)
+├─ installer/              per-user Inno Setup installer (.iss + build script)
+└─ config.json             sample config (shipped next to the exe)
+```
+
+## Tests
+
+```powershell
+dotnet test
+```
+
+`Tests/` is a small xUnit project covering the pure logic — CIDR/MAC matching (`AdapterMatcher`),
+the VM status maths (`VmStatus`), and the `config.json` contract (including `autoStart`). It
+**links** the relevant source files rather than referencing the WinUI app, so `dotnet test` needs
+no Windows App SDK runtime. The UI/Hyper-V layers are exercised by building and running the app.
+
 ## Development notes
 
 Non-obvious Hyper-V / Windows-networking gotchas and the reasoning behind the design choices
@@ -186,18 +218,20 @@ the app talks to Hyper-V or the host network.
 
 ## Built with
 
-- **Language / runtime:** C# on **.NET 10** (`net10.0-windows`), Windows Forms for the tray UI
-- **OS integration:** Win32 P/Invoke (`iphlpapi.dll` `GetBestInterface`, `user32.dll` `DestroyIcon`), and the Windows-bundled `powershell.exe` (Hyper-V cmdlets) and `schtasks.exe` (auto-start task)
+- **Language / UI:** C# on **.NET 10**, **WinUI 3 / Windows App SDK** (`net10.0-windows10.0.26100.0`, unpackaged, Mica backdrop)
+- **OS integration:** Win32 P/Invoke (`iphlpapi.dll` `GetBestInterface`, `user32.dll`/`Shcore.dll` for popup positioning + message boxes), and the Windows-bundled `powershell.exe` (Hyper-V cmdlets) and `schtasks.exe` (auto-start task)
 
 ### External libraries
 
-The only third-party package is one Microsoft NuGet library; everything else is the .NET base class library.
-
 | Package | Version | Author | Purpose | License |
 |---|---|---|---|---|
+| [Microsoft.WindowsAppSDK](https://www.nuget.org/packages/Microsoft.WindowsAppSDK) | 2.1.3 | Microsoft | WinUI 3 framework (windowing, XAML, Mica) | MIT |
+| [Microsoft.Windows.SDK.BuildTools](https://www.nuget.org/packages/Microsoft.Windows.SDK.BuildTools) | 10.0.28000.1839 | Microsoft | Windows SDK build tooling for the App SDK | MIT |
+| [H.NotifyIcon.WinUI](https://github.com/HavenDV/H.NotifyIcon) | 2.4.1 | Dmitry Kolchev (HavenDV) | System-tray icon + native context menu for WinUI 3 | MIT |
+| [System.Drawing.Common](https://www.nuget.org/packages/System.Drawing.Common) | 10.0.8 | Microsoft | Renders the tray `.ico` at runtime | MIT |
 | [Microsoft.Extensions.Logging](https://www.nuget.org/packages/Microsoft.Extensions.Logging) | 10.0.8 | Microsoft | Logging abstraction; output goes to a small custom file sink | MIT |
 
-No non-Microsoft / community dependencies are used.
+All are MIT-licensed. The only non-Microsoft dependency is **H.NotifyIcon.WinUI** (used for the tray icon, the same way the sibling LenovoTray app does).
 
 ---
 
@@ -211,7 +245,7 @@ MIT — see [`LICENSE`](LICENSE).
 
 Logs are written to:
 ```
-%APPDATA%\HyperVNetworkSwitcher\switcher.log
+%APPDATA%\HyperVManagerTray\switcher.log
 ```
 
 Each switch change, rule evaluation, and error is recorded there.
@@ -222,7 +256,8 @@ Each switch change, rule evaluation, and error is recorded there.
 
 | Symptom | Likely cause |
 |---|---|
-| UAC prompt on every launch | Normal — required for Hyper-V access |
+| UAC prompt on every launch | Normal — required for Hyper-V access. Enable **Run on startup** for a prompt-free elevated auto-start. |
 | Status shows "Fallback" on the office LAN | MAC or CIDR in the rule does not match — check `switcher.log` |
-| VM IP shows "no IP" | VM is powered off, or DHCP hasn't responded yet — wait a few seconds and Force Re-evaluate |
+| VM card shows "Unknown" / no CPU·memory meters | The `config.json` VM name doesn't match a VM on the host, or the VM isn't running (only running VMs report metrics) |
 | Switch change fails silently | User account lacks Hyper-V Administrator rights |
+| Dashboard opens blank / `0xC000027B` at startup | The `.pri` resource index isn't next to the exe — re-run the installer or copy the whole publish folder |

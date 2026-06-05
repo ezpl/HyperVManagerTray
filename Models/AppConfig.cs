@@ -1,4 +1,4 @@
-namespace HyperVNetworkSwitcher.Models;
+namespace HyperVManagerTray.Models;
 
 /// <summary>
 /// The switch and VMs to use when no <see cref="NetworkRule"/> matches the current network

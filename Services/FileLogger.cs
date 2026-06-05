@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray.Services;
 
 /// <summary><see cref="ILoggingBuilder"/> extension for registering the simple file logger.</summary>
 public static class FileLoggerExtensions

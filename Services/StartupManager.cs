@@ -1,6 +1,7 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Manages "run at Windows logon" for this elevated app.
@@ -14,9 +15,13 @@ namespace HyperVNetworkSwitcher;
 /// </summary>
 internal sealed class StartupManager
 {
-    private const string TaskName       = "HyperVNetworkSwitcher";
+    private const string TaskName       = "HyperVManagerTray";
     private const string LegacyRunKey   = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string LegacyRunValue = "HyperVNetworkSwitcher";
+    private const string LegacyRunValue = "HyperVManagerTray";
+
+    private readonly ILogger<StartupManager> _logger;
+
+    public StartupManager(ILogger<StartupManager> logger) => _logger = logger;
 
     /// <summary>True if the auto-start scheduled task exists (<c>schtasks /Query</c> exits 0).</summary>
     public bool IsEnabled => ProcessRunner.Run("schtasks.exe", "/Query", "/TN", TaskName).Success;
@@ -24,6 +29,7 @@ internal sealed class StartupManager
     /// <summary>Creates the logon task pointing at <paramref name="exePath"/>. Throws on failure.</summary>
     public void Enable(string exePath)
     {
+        _logger.LogInformation("Enabling startup task '{TaskName}' for '{ExePath}'...", TaskName, exePath);
         var result = ProcessRunner.Run("schtasks.exe",
             "/Create", "/TN", TaskName,
             "/TR", $"\"{exePath}\"",
@@ -31,15 +37,28 @@ internal sealed class StartupManager
             "/RL", "HIGHEST",
             "/F");
 
-        if (!result.Success) throw new InvalidOperationException(result.Output);
+        if (!result.Success)
+        {
+            _logger.LogWarning("Failed to create startup task '{TaskName}': {Error}", TaskName, result.Output);
+            throw new InvalidOperationException(result.Output);
+        }
+
+        _logger.LogInformation("Startup task '{TaskName}' enabled successfully.", TaskName);
         RemoveLegacyRunKey();
     }
 
     /// <summary>Deletes the logon task. Throws on failure.</summary>
     public void Disable()
     {
+        _logger.LogInformation("Disabling startup task '{TaskName}'...", TaskName);
         var result = ProcessRunner.Run("schtasks.exe", "/Delete", "/TN", TaskName, "/F");
-        if (!result.Success) throw new InvalidOperationException(result.Output);
+        if (!result.Success)
+        {
+            _logger.LogWarning("Failed to delete startup task '{TaskName}': {Error}", TaskName, result.Output);
+            throw new InvalidOperationException(result.Output);
+        }
+
+        _logger.LogInformation("Startup task '{TaskName}' disabled successfully.", TaskName);
         RemoveLegacyRunKey();
     }
 

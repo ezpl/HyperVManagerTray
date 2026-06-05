@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray.Services;
 
 /// <summary>Result of evaluating config rules against the current host network state.</summary>
 public sealed record MatchResult(string RuleName, string VirtualSwitch, IReadOnlyList<string> TargetVms)
@@ -275,7 +275,7 @@ public static class AdapterMatcher
     }
 
     // Formats "AABBCCDDEEFF" → "AA:BB:CC:DD:EE:FF"
-    private static string FormatMac(string raw)
+    internal static string FormatMac(string raw)
     {
         var clean = raw.Replace(":", "").Replace("-", "").ToUpperInvariant();
         if (clean.Length != 12) return raw; // not a standard 48-bit MAC — return as-is
@@ -313,21 +313,31 @@ public static class AdapterMatcher
         nic.Description.StartsWith("Hyper-V Virtual", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Returns true for Windows WFP/NDIS filter-driver adapters.  These appear as separate
-    /// NetworkInterface objects alongside the real physical NIC (e.g. "Ethernet-WFP Native
-    /// MAC Layer LightWeight Filter-0000") and share the same MAC/IP, but they are NOT
-    /// valid adapter names for Set-VMSwitch -NetAdapterName — only the real NIC's alias is.
+    /// Returns true for software/virtual adapters that should never be used as a
+    /// <c>Set-VMSwitch -NetAdapterName</c> target or participate in rule matching.
+    ///
+    /// <list type="bullet">
+    ///   <item><b>WFP / NDIS filter-driver adapters</b> — Windows creates these alongside the
+    ///   real physical NIC (e.g. "Ethernet-WFP Native MAC Layer LightWeight Filter-0000").
+    ///   They share the same MAC/IP but are not valid switch targets and cause WMI hangs.</item>
+    ///   <item><b>Microsoft Network Adapter Multiplexor Driver</b> — the adapter created by
+    ///   the Windows "Bridge Connections" (Network Bridge / ms_bridge) feature.  If selected
+    ///   as the external NIC, <c>Set-VMSwitch</c> binds the Hyper-V switch to the Windows
+    ///   bridge instead of the underlying physical NIC, which activates the MAC Bridge service
+    ///   and causes the host to route through the wrong adapter.</item>
+    /// </list>
     /// </summary>
     private static bool IsFilterLayerAdapter(NetworkInterface nic)
     {
         static bool HasMarker(string s) =>
             s.IndexOf("-WFP ",             StringComparison.OrdinalIgnoreCase) >= 0 ||
             s.IndexOf("LightWeight Filter", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            s.IndexOf("-NDIS ",            StringComparison.OrdinalIgnoreCase) >= 0;
+            s.IndexOf("-NDIS ",            StringComparison.OrdinalIgnoreCase) >= 0 ||
+            s.IndexOf("Multiplexor",       StringComparison.OrdinalIgnoreCase) >= 0;   // Windows Network Bridge
         return HasMarker(nic.Name) || HasMarker(nic.Description);
     }
 
-    private static bool IsInCidr(IPAddress address, string cidr)
+    internal static bool IsInCidr(IPAddress address, string cidr)
     {
         var parts = cidr.Split('/');
         if (parts.Length != 2 || !int.TryParse(parts[1], out int prefixLen)) return false;

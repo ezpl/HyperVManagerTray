@@ -4,7 +4,7 @@
 > design choices — so the same mistakes aren't re-made. Read this before changing how the
 > app talks to Hyper-V or the host network.
 
-_Last updated: 2026-06-02._
+_Last updated: 2026-06-05 (project renamed HyperVNetworkSwitcher → HyperVManagerTray; WinUI 3 migration, Inno Setup installer, `Services/` layout, unit tests, Multiplexor adapter fix, icon redesign, dashboard unification)._
 
 ---
 
@@ -47,6 +47,33 @@ but are **not valid `Set-VMSwitch -NetAdapterName` targets** — binding to one 
 
 **Fix:** `IsFilterLayerAdapter()` excludes anything whose name/description contains `-WFP `,
 `-NDIS `, or `LightWeight Filter`. `FriendlyAdapterName()` also strips those suffixes for display.
+
+### 2b. Windows Network Bridge (Multiplexor Driver) is another decoy  ⚠️ confirmed bug
+The Windows "Bridge Connections" feature (ncpa.cpl → select adapters → Bridge) creates a
+**Microsoft Network Adapter Multiplexor Driver** adapter (`ms_bridge` / `Network Bridge`).
+Unlike WFP adapters, it can appear on the LAN with a real DHCP-assigned IP and a metric-0
+default route — so `MatchingNic` found it, selected it as the physical adapter for the rule,
+and passed `"Network Bridge"` to `UpdateSwitchBindingAsync`. The result:
+- `Set-VMSwitch -NetAdapterName 'Network Bridge' -AllowManagementOS $true` ran
+- The MAC Bridge Windows service was set to **auto start** and the Multiplexor Driver bound
+  to the Hyper-V switch as its external NIC (confirmed in System event log at 16:28:22–27)
+- A second default-route adapter (`Network Bridge`) competed with `vEthernet (Bridged)` —
+  `Find-NetRoute` showed outbound traffic going through the wrong one, so the host appeared
+  to "use WiFi" even with the cable plugged in
+- The subsequent evaluation saw chaos, matched Fallback, and switched the VM to Default Switch
+
+**Root cause:** the Multiplexor Driver passes both `IsHyperVVirtual()` (description doesn't
+start with "Hyper-V Virtual") and the old `IsFilterLayerAdapter()` (no WFP/NDIS markers).
+
+**Fix (2026-06-05):** `IsFilterLayerAdapter()` now also excludes any adapter whose name or
+description contains `"Multiplexor"` (covers the Microsoft Network Adapter Multiplexor Driver
+and any LBFO team adapters, which have the same issue).
+
+**If you see a `Network Bridge` adapter in ncpa.cpl that you didn't intentionally create:**
+delete it (right-click → Delete). It will not affect Hyper-V's own `AllowManagementOS` bridge
+(`vEthernet (<switch>)`), which is a separate mechanism. To diagnose: run
+`Find-NetRoute -RemoteIPAddress 8.8.8.8` — the `InterfaceAlias` should be
+`vEthernet (<your switch>)`, not `Network Bridge`.
 
 ### 3. Orphaned `vEthernet (<switch>)` NICs accumulate on rebind  ⚠️ the big one
 Running `Set-VMSwitch -Name X -NetAdapterName <new> -AllowManagementOS $true` to **rebind a
@@ -120,27 +147,65 @@ started it (and didn't even show in Task Manager until reopened).
 
 **Fix (`StartupManager`):** a Scheduled Task with `/SC ONLOGON /RL HIGHEST`. It runs in the
 user's interactive session (tray icon appears) with **no UAC prompt**. The obsolete `Run` value
-is cleaned up on toggle and by `Install.ps1`.
+is cleaned up on toggle (`StartupManager`).
 
 ### 10. Pre-`Application.Run()` there is no WinForms `SynchronizationContext`
 `SynchronizationContext.Current` is null before the message loop starts, so posting UI updates
 via a captured context goes to the thread pool and races the first paint (empty popup on first
-click). **Fix:** the `TrayApplication` constructor pre-populates the popup **synchronously**.
+click). **Fix (historical, WinForms):** the old `TrayApplication` pre-populated the popup
+synchronously. Under WinUI this is gone — the dashboard refreshes itself before `AppWindow.Show()`.
 
 ---
 
-## Resource notes (reviewed 2026-06-02)
+## WinUI 3 migration (v2.0 — the app moved off WinForms)
 
-The app is already cheap: **~0 idle CPU** (fully event-driven — `NetworkChange` +
-`FileSystemWatcher`, no polling) and **~13–16 MB private memory**.
+The UI was rewritten in **WinUI 3 / Windows App SDK** (unpackaged, `WindowsPackageType=None`) to
+match the sibling LenovoTray app: Mica dashboard, tray icon via **H.NotifyIcon.WinUI**, per-VM
+control cards. The network/Hyper-V core (`NetworkMonitor`, `AdapterMatcher`, `HyperVManager`,
+`ConfigManager`, `ProcessRunner`, `StartupManager`) ported **unchanged** — it was already UI-agnostic.
+
+Gotchas hit (and how they're handled):
+- **The `.pri` resource index.** An unpackaged WinUI publish must ship `<App>.pri` next to the exe,
+  or `Microsoft.UI.Xaml.dll` throws a stowed exception **0xC000027B** at startup. The `.csproj` has
+  a `CopyAppPriToPublish` target; `installer\build-installer.ps1` verifies it landed.
+- **WinForms can't host a WinUI 3 window**, so this was a full UI migration, not a bolt-on. A hidden
+  `MainWindow` keeps the app alive while only the tray icon + popup are visible.
+- **Native tray menu caveat (H.NotifyIcon):** the right-click menu is rebuilt as a native Win32 menu
+  each time; XAML `Click`/`Opening` events do NOT fire — bind `Command` (`RelayCommand`) instead, and
+  resync dynamic items in `TrayMenu.RefreshState()` before it opens.
+- **UI thread marshaling** is now `DispatcherQueue.TryEnqueue` (was `SynchronizationContext.Post`).
+  `NetworkMonitor.SwitchApplied` still fires on a background thread.
+- **No `MessageBox`** in WinUI — small `MessageBoxW` P/Invokes in `NativeMethods` cover errors/confirms.
+- **Publish is a folder, not a single file.** `PublishSingleFile`/`EnableCompressionInSingleFile`
+  don't apply; the per-user Inno Setup installer copies the folder (config.json installed
+  `onlyifdoesntexist` so user edits survive upgrades). `PublishTrimmed=false`
+  (WinUI + reflection-y JSON trim poorly) — so reflection-based `System.Text.Json` is kept;
+  `PublishReadyToRun=true` on Release for faster startup.
+- **Dashboard polling** (CPU/mem/VHD via `Get-VM`) runs on a `DispatcherTimer` **only between
+  `Activated` and hide/close** — preserving the zero-idle property when the dashboard is shut.
+
+---
+
+## Resource notes (updated 2026-06-04 — WinUI 3 figures)
+
+**Idle CPU ~0** — the core is still fully event-driven (`NetworkChange` + `FileSystemWatcher`).
+The dashboard polling timer runs **only while the dashboard is open**, so a minimised/closed app
+costs nothing.  The WinUI 3 runtime raises the memory baseline versus the old WinForms build:
+
+| Measure | WinForms v1 | WinUI 3 v2 |
+|---|---|---|
+| Working set (idle) | ~62 MB | ~148 MB |
+| Private memory | ~13–16 MB | n/a (WinUI allocates differently) |
+| Idle CPU | ~0 | ~0 |
 
 | Lever | Verdict |
 |---|---|
-| `InvariantGlobalization=true` | **Kept.** ICU not loaded → ~16→13 MB RAM. No localized UI, all formatting/parsing is ordinal/invariant. Does **not** shrink the self-contained file without trimming. |
+| `InvariantGlobalization=true` | **Kept.** ICU not loaded; no localized UI, all formatting is ordinal/invariant. |
 | Remove unused `Logging.Console` pkg | **Kept.** Only the custom file sink is wired up. |
-| Cache GDI fonts/brushes in `StatusPopupForm` | **Kept.** No per-repaint allocation. |
-| `EnableCompressionInSingleFile` | **Rejected.** Shrinks exe 112→49 MB but decompresses into memory → **+40 MB RAM**. For an always-on tray app, RAM > disk. |
-| `PublishTrimmed` | Not attempted — WinForms trims poorly (reflection). Risky. |
+| `EnableCompressionInSingleFile` | **N/A for WinUI.** (Was rejected for WinForms: −63 MB disk but +40 MB RAM.) |
+| `PublishTrimmed` | **Rejected.** WinUI 3 + reflection-based JSON trim poorly and break at runtime. |
+| `PublishReadyToRun=true` | **Kept** (Release only) for faster startup. |
+| `WindowsAppSDKSelfContained=true` | **Required.** Bundles the Windows App SDK so no separate runtime install is needed on the target machine. |
 
 ---
 
@@ -155,3 +220,7 @@ The app is already cheap: **~0 idle CPU** (fully event-driven — `NetworkChange
   **not** match a cable rule (different MAC) — that's intended; it falls back to NAT.
 - Verify a healthy bridge with: one `Up` `vEthernet (Bridged)` carrying the LAN IP, and no
   numbered `vEthernet (Bridged) N` siblings.
+- **Automated tests** (`dotnet test`) cover the pure logic only — CIDR/MAC matching, `VmStatus`
+  maths, and the `config.json` contract. The `Tests/` project **links** those source files (no
+  ProjectReference to the WinUI app), so it runs without the Windows App SDK runtime. The
+  UI/Hyper-V layers have no automated coverage — exercise them by building and running the app.
