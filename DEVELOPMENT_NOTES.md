@@ -159,18 +159,26 @@ Gotchas hit (and how they're handled):
 
 ---
 
-## Resource notes (reviewed 2026-06-02; WinForms-era figures)
+## Resource notes (updated 2026-06-04 — WinUI 3 figures)
 
-The app is already cheap: **~0 idle CPU** (fully event-driven — `NetworkChange` +
-`FileSystemWatcher`, no polling) and **~13–16 MB private memory**.
+**Idle CPU ~0** — the core is still fully event-driven (`NetworkChange` + `FileSystemWatcher`).
+The dashboard polling timer runs **only while the dashboard is open**, so a minimised/closed app
+costs nothing.  The WinUI 3 runtime raises the memory baseline versus the old WinForms build:
+
+| Measure | WinForms v1 | WinUI 3 v2 |
+|---|---|---|
+| Working set (idle) | ~62 MB | ~148 MB |
+| Private memory | ~13–16 MB | n/a (WinUI allocates differently) |
+| Idle CPU | ~0 | ~0 |
 
 | Lever | Verdict |
 |---|---|
-| `InvariantGlobalization=true` | **Kept.** ICU not loaded → ~16→13 MB RAM. No localized UI, all formatting/parsing is ordinal/invariant. Does **not** shrink the self-contained file without trimming. |
+| `InvariantGlobalization=true` | **Kept.** ICU not loaded; no localized UI, all formatting is ordinal/invariant. |
 | Remove unused `Logging.Console` pkg | **Kept.** Only the custom file sink is wired up. |
-| Cache GDI fonts/brushes in `StatusPopupForm` | **Kept.** No per-repaint allocation. |
-| `EnableCompressionInSingleFile` | **Rejected.** Shrinks exe 112→49 MB but decompresses into memory → **+40 MB RAM**. For an always-on tray app, RAM > disk. |
-| `PublishTrimmed` | Not attempted — WinForms trims poorly (reflection). Risky. |
+| `EnableCompressionInSingleFile` | **N/A for WinUI.** (Was rejected for WinForms: −63 MB disk but +40 MB RAM.) |
+| `PublishTrimmed` | **Rejected.** WinUI 3 + reflection-based JSON trim poorly and break at runtime. |
+| `PublishReadyToRun=true` | **Kept** (Release only) for faster startup. |
+| `WindowsAppSDKSelfContained=true` | **Required.** Bundles the Windows App SDK so no separate runtime install is needed on the target machine. |
 
 ---
 
