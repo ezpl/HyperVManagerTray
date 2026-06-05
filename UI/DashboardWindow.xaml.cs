@@ -173,27 +173,49 @@ public sealed partial class DashboardWindow : Window
         bool running = s?.IsRunning == true;
         var rows = new StackPanel { Spacing = 6 };
 
-        // ── Header: VM name + state ──────────────────────────────────────────
+        // ── Header: VM name + state (+ uptime when running) ─────────────────
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        header.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var title = new TextBlock
         {
-            Text       = vm.Name,
-            FontSize   = 12,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Text              = vm.Name,
+            FontSize          = 12,
+            FontWeight        = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
         };
+        Grid.SetRowSpan(title, 2);
         var stateLabel = new TextBlock
         {
             Text              = FormatState(s),
             FontSize          = 11,
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
             Foreground        = StateBrush(s),
         };
         Grid.SetColumn(stateLabel, 1);
+        Grid.SetRow(stateLabel, 0);
         header.Children.Add(title);
         header.Children.Add(stateLabel);
+
+        var uptimeText = FormatUptime(s);
+        if (!string.IsNullOrEmpty(uptimeText))
+        {
+            var uptimeLbl = new TextBlock
+            {
+                Text                = uptimeText,
+                FontSize            = 10,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Foreground          = AppColors.IndicatorGreyBrush,
+            };
+            Grid.SetColumn(uptimeLbl, 1);
+            Grid.SetRow(uptimeLbl, 1);
+            header.Children.Add(uptimeLbl);
+        }
+
         rows.Children.Add(header);
 
         // ── Switch / rule subtitle ───────────────────────────────────────────
@@ -346,6 +368,26 @@ public sealed partial class DashboardWindow : Window
         { IsSaved:   true } => AppColors.IndicatorOrangeBrush,
         _                   => AppColors.IndicatorGreyBrush,
     };
+
+    /// <summary>
+    /// Formats the VM uptime for display on the card header.
+    /// Returns empty string when the VM is not running or the uptime string is unavailable.
+    /// Examples: "47m", "3h 14m", "2d 3h".
+    /// </summary>
+    private static string FormatUptime(VmStatus? s)
+    {
+        if (s is null || !s.IsRunning || string.IsNullOrWhiteSpace(s.Uptime))
+            return string.Empty;
+
+        if (!TimeSpan.TryParse(s.Uptime, out var ts) || ts < TimeSpan.Zero)
+            return string.Empty;
+
+        if (ts.TotalDays >= 1)
+            return $"{(int)ts.TotalDays}d {ts.Hours}h";
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h {ts.Minutes}m";
+        return $"{(int)ts.TotalMinutes}m";
+    }
 
     /// <summary>
     /// Formats the VM state string, appending a save/resume percentage when available.
