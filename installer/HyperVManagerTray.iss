@@ -9,7 +9,7 @@
 
 #define AppName       "Hyper-V Manager Tray"
 #define AppExe        "HyperVManagerTray.exe"
-#define AppPublisher  "ezpl"
+#define AppPublisher  "Zero Zero Software"
 #define AppUrl        "https://github.com/ezpl/HyperVManagerTray"
 ; Matches the task name used by the app's in-tray "Run on startup" toggle (StartupManager),
 ; so the installer option and the tray toggle control the exact same logon task.
@@ -45,7 +45,7 @@ OutputBaseFilename=HyperVManagerTray-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=..\Assets\app.ico
+SetupIconFile=..\Assets\AppIcon.ico
 ; Let a silent (background) update close the running tray app and replace its files.
 ; Do NOT auto-restart it afterwards — the app is requireAdministrator, so relaunching
 ; would pop a UAC prompt out of nowhere. It returns at the next sign-in / manual launch.
