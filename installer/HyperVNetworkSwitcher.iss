@@ -58,16 +58,19 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Excludes: "config.json"; Flags: rec
 Source: "{#PublishDir}\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
 
 [Icons]
-Name: "{group}\{#AppName}";         Filename: "{app}\{#AppExe}"
-Name: "{userstartmenu}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; Flat shortcut in Start Menu → Programs (no sub-folder) so the app is searchable by name.
+Name: "{userprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"; Comment: "Hyper-V VM network and power manager"
 
 [Tasks]
 Name: "runstartup"; Description: "Run {#AppName} automatically at sign-in (starts elevated without a UAC prompt at boot)"; Flags: unchecked
 
 ; Generated at runtime by the app — remove on uninstall so the folder can be cleaned up.
 [UninstallDelete]
-Type: files;     Name: "{app}\switch-blue.ico"
-Type: files;     Name: "{app}\switch-grey.ico"
+Type: files;      Name: "{app}\icon-bridged-v2.ico"
+Type: files;      Name: "{app}\icon-fallback-v2.ico"
+; v1 names — clean up if upgrading from an older install
+Type: files;      Name: "{app}\switch-blue.ico"
+Type: files;      Name: "{app}\switch-grey.ico"
 Type: dirifempty; Name: "{app}"
 
 ; NOTE: launching the app is handled in [Code] (LaunchApp), not [Run]. A [Run] entry uses

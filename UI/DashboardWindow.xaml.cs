@@ -10,14 +10,14 @@ using HyperVNetworkSwitcher.Services;
 namespace HyperVNetworkSwitcher.UI;
 
 /// <summary>
-/// Borderless Mica popup: host-network/switch status on top, then a control card per configured
-/// VM (state, CPU / memory / VHD meters, power buttons).  Appears bottom-right above the taskbar
-/// and auto-dismisses when it loses focus.  VM metrics refresh on a timer only while it is open
-/// (see <see cref="StartPolling"/>), so a closed dashboard costs nothing.
+/// Borderless Mica popup: host-network status card on top, then a control card per configured
+/// VM (current switch/rule, state, CPU / memory / VHD meters, power buttons).  Appears
+/// bottom-right above the taskbar and auto-dismisses when it loses focus.  VM metrics refresh
+/// on a timer only while it is open, so a closed dashboard costs nothing.
 /// </summary>
 public sealed partial class DashboardWindow : Window
 {
-    private const double ContentWidth = 320;   // effective pixels (DIPs)
+    private const double ContentWidth = 320;
     private const int    EdgeMargin   = 12;
 
     private static readonly TimeSpan PollInterval    = TimeSpan.FromSeconds(2);
@@ -66,8 +66,8 @@ public sealed partial class DashboardWindow : Window
         AppWindow.Hide();
     }
 
-    /// <summary>Called by <see cref="App"/> (UI thread) when a switch change is applied.</summary>
-    public void OnSwitchApplied(MatchResult result) => ApplyStatus(result);
+    /// <summary>Called by App (UI thread) when a switch change is applied.</summary>
+    public void OnSwitchApplied(MatchResult result) => ApplyHostStatus(result);
 
     // ── Window chrome / placement ───────────────────────────────────────────────
 
@@ -103,9 +103,7 @@ public sealed partial class DashboardWindow : Window
     private void OnActivated(object sender, WindowActivatedEventArgs e)
     {
         if (e.WindowActivationState == WindowActivationState.Deactivated)
-        {
             HideWindow();
-        }
         else
         {
             _timer.Start();
@@ -113,23 +111,21 @@ public sealed partial class DashboardWindow : Window
         }
     }
 
-    // ── Top status block ────────────────────────────────────────────────────────
+    // ── Host network card ───────────────────────────────────────────────────────
 
     private void Refresh()
     {
         var result = _monitor.LastApplied ?? AdapterMatcher.Evaluate(_config.Current);
-        ApplyStatus(result);
+        ApplyHostStatus(result);
     }
 
-    private void ApplyStatus(MatchResult result)
+    private void ApplyHostStatus(MatchResult result)
     {
         AdapterText.Text = result.HostAdapterName;
         IpText.Text      = result.HostIp;
         GatewayText.Text = result.Gateway;
-        DnsText.Text     = result.DnsServers.Count > 0 ? string.Join("  ·  ", result.DnsServers.Take(2)) : "—";
-        VmText.Text      = result.TargetVms.Count > 0 ? string.Join(", ", result.TargetVms) : "—";
-        SwitchText.Text  = result.VirtualSwitch;
-        RuleText.Text    = result.RuleName;
+        DnsText.Text     = result.DnsServers.Count > 0
+            ? string.Join("  ·  ", result.DnsServers.Take(2)) : "—";
     }
 
     // ── Per-VM cards ────────────────────────────────────────────────────────────
@@ -176,45 +172,63 @@ public sealed partial class DashboardWindow : Window
         bool running = s?.IsRunning == true;
         var rows = new StackPanel { Spacing = 6 };
 
-        // Header: name + state dot
+        // ── Header: VM name + state ──────────────────────────────────────────
         var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = new TextBlock { Text = vm.Name, FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
-        var state = new TextBlock
+
+        var title = new TextBlock
         {
-            Text = s?.State ?? "Unknown",
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = StateBrush(s),
+            Text       = vm.Name,
+            FontSize   = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         };
-        Grid.SetColumn(state, 1);
+        var stateLabel = new TextBlock
+        {
+            Text              = s?.State ?? "Unknown",
+            FontSize          = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground        = StateBrush(s),
+        };
+        Grid.SetColumn(stateLabel, 1);
         header.Children.Add(title);
-        header.Children.Add(state);
+        header.Children.Add(stateLabel);
         rows.Children.Add(header);
 
-        // Meters (only meaningful when running)
+        // ── Switch / rule subtitle ───────────────────────────────────────────
+        var switchText = !string.IsNullOrWhiteSpace(s?.Switch) ? s.Switch : "—";
+        var ruleText   = _monitor.LastApplied?.RuleName ?? "—";
+        rows.Children.Add(new TextBlock
+        {
+            Text       = $"{switchText}  ·  {ruleText}",
+            FontSize   = 10,
+            Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+        });
+
+        // ── Metrics (running VMs only) ───────────────────────────────────────
         if (running && s is not null)
         {
-            rows.Children.Add(Meter("CPU", $"{s.Cpu}%", s.Cpu / 100.0));
+            rows.Children.Add(Meter("CPU", $"{s.Cpu}%",           s.Cpu / 100.0));
             rows.Children.Add(Meter("Mem", $"{s.MemAssignedMb:N0} MB", s.MemoryFraction));
         }
         if (s is not null && s.VhdBytes > 0)
             rows.Children.Add(Meter("Disk", $"{s.VhdGb:N1} GB", -1));
 
-        // Power buttons (state-appropriate)
+        // ── Power buttons ────────────────────────────────────────────────────
         rows.Children.Add(BuildButtons(vm, s));
 
         return new Border
         {
-            CornerRadius = new CornerRadius(6),
-            Padding      = new Thickness(10, 8, 10, 8),
-            Background   = running ? AppColors.CardActiveBrush : AppColors.CardInactiveBrush,
-            Child        = rows,
+            CornerRadius  = new CornerRadius(6),
+            Padding       = new Thickness(10, 8, 10, 8),
+            Background    = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            BorderBrush   = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            Child         = rows,
         };
     }
 
-    // label + value + thin bar (fraction < 0 => no bar, value-only e.g. disk)
+    // label + optional progress bar + value
     private static Grid Meter(string label, string value, double fraction)
     {
         var g = new Grid { ColumnSpacing = 8 };
@@ -222,14 +236,29 @@ public sealed partial class DashboardWindow : Window
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var lbl = new TextBlock { Text = label, FontSize = 11, Foreground = AppColors.IndicatorGreyBrush, VerticalAlignment = VerticalAlignment.Center };
+        var lbl = new TextBlock
+        {
+            Text              = label,
+            FontSize          = 11,
+            Foreground        = AppColors.IndicatorGreyBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         Grid.SetColumn(lbl, 0);
         g.Children.Add(lbl);
 
         if (fraction >= 0)
         {
-            var bar = new ProgressBar { Minimum = 0, Maximum = 100, Value = Math.Clamp(fraction * 100, 0, 100), Height = 6, VerticalAlignment = VerticalAlignment.Center };
-            bar.Foreground = fraction <= 0.5 ? AppColors.GaugeLowBrush : fraction <= 0.85 ? AppColors.GaugeMedBrush : AppColors.GaugeHighBrush;
+            var bar = new ProgressBar
+            {
+                Minimum           = 0,
+                Maximum           = 100,
+                Value             = Math.Clamp(fraction * 100, 0, 100),
+                Height            = 6,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground        = fraction <= 0.5 ? AppColors.GaugeLowBrush
+                                  : fraction <= 0.85 ? AppColors.GaugeMedBrush
+                                  : AppColors.GaugeHighBrush,
+            };
             Grid.SetColumn(bar, 1);
             g.Children.Add(bar);
         }
@@ -242,12 +271,13 @@ public sealed partial class DashboardWindow : Window
 
     private StackPanel BuildButtons(VmTarget vm, VmStatus? s)
     {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 2, 0, 0) };
+
         void Btn(string text, Func<Task> action) => panel.Children.Add(new Button
         {
             Content  = text,
             FontSize = 11,
-            Padding  = new Thickness(8, 2, 8, 2),
+            Padding  = new Thickness(8, 3, 8, 3),
             Command  = new RelayCommand(() => _ = RunThenReload(action)),
         });
 
@@ -256,19 +286,19 @@ public sealed partial class DashboardWindow : Window
 
         if (running)
         {
-            Btn("Shutdown", () => _hyperV.ShutdownVmAsync(vm.Name));
-            Btn("Pause",    () => _hyperV.SuspendVmAsync(vm.Name));
-            Btn("Save",     () => _hyperV.SaveVmAsync(vm.Name));
-            Btn("Connect",  () => ConnectAsync(vm));
+            Btn("Shutdown",  () => _hyperV.ShutdownVmAsync(vm.Name));
+            Btn("Pause",     () => _hyperV.SuspendVmAsync(vm.Name));
+            Btn("Save",      () => _hyperV.SaveVmAsync(vm.Name));
+            Btn("Connect",   () => ConnectAsync(vm));
         }
         else if (paused)
         {
-            Btn("Resume",   () => _hyperV.ResumeVmAsync(vm.Name));
-            Btn("Save",     () => _hyperV.SaveVmAsync(vm.Name));
+            Btn("Resume", () => _hyperV.ResumeVmAsync(vm.Name));
+            Btn("Save",   () => _hyperV.SaveVmAsync(vm.Name));
         }
         else // Off / Saved / unknown
         {
-            Btn("Start",          () => _hyperV.StartOrResumeVmAsync(vm.Name));
+            Btn("Start",           () => _hyperV.StartOrResumeVmAsync(vm.Name));
             Btn("Start & Connect", () => StartAndConnectAsync(vm));
         }
         return panel;
@@ -296,9 +326,9 @@ public sealed partial class DashboardWindow : Window
 
     private static Brush StateBrush(VmStatus? s) => s switch
     {
-        { IsRunning: true }            => AppColors.IndicatorGreenBrush,
-        { IsPaused: true }             => AppColors.IndicatorOrangeBrush,
-        { IsSaved: true }              => AppColors.IndicatorOrangeBrush,
-        _                              => AppColors.IndicatorGreyBrush,
+        { IsRunning: true } => AppColors.IndicatorGreenBrush,
+        { IsPaused:  true } => AppColors.IndicatorOrangeBrush,
+        { IsSaved:   true } => AppColors.IndicatorOrangeBrush,
+        _                   => AppColors.IndicatorGreyBrush,
     };
 }
