@@ -1,8 +1,8 @@
 using System.Net.NetworkInformation;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Watches the host's network state (via <see cref="NetworkChange"/>), re-evaluates the

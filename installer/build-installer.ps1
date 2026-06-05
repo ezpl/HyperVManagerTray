@@ -6,9 +6,9 @@
     1. Ensures Assets\app.ico exists (generates it if absent via Generate-AppIcon.ps1).
     2. Publishes the app fully self-contained (win-x64, Windows App SDK bundled, no trimming —
        trimming breaks WinUI 3).
-    3. Compiles installer\HyperVNetworkSwitcher.iss with Inno Setup (ISCC.exe).
+    3. Compiles installer\HyperVManagerTray.iss with Inno Setup (ISCC.exe).
 
-    Output: installer\Output\HyperVNetworkSwitcher-Setup.exe (per-user, no admin to install;
+    Output: installer\Output\HyperVManagerTray-Setup.exe (per-user, no admin to install;
     the app elevates itself at runtime).
 
     Requires Inno Setup (ISCC). If missing, install it once:
@@ -26,9 +26,9 @@ $ErrorActionPreference = "Stop"
 
 $installerDir = $PSScriptRoot
 $root         = Split-Path $installerDir -Parent
-$proj         = Join-Path $root "HyperVNetworkSwitcher.csproj"
+$proj         = Join-Path $root "HyperVManagerTray.csproj"
 $publishDir   = Join-Path $root "publish"
-$iss          = Join-Path $installerDir "HyperVNetworkSwitcher.iss"
+$iss          = Join-Path $installerDir "HyperVManagerTray.iss"
 
 # ── 1. Ensure Assets\app.ico exists ─────────────────────────────────────────
 $appIco = Join-Path $root "Assets\app.ico"
@@ -47,8 +47,8 @@ dotnet publish $proj `
     -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
 
-if (-not (Test-Path (Join-Path $publishDir "HyperVNetworkSwitcher.pri"))) {
-    throw "HyperVNetworkSwitcher.pri missing from publish output - WinUI would crash at startup (0xC000027B)."
+if (-not (Test-Path (Join-Path $publishDir "HyperVManagerTray.pri"))) {
+    throw "HyperVManagerTray.pri missing from publish output - WinUI would crash at startup (0xC000027B)."
 }
 
 # ── 3. Locate Inno Setup compiler ────────────────────────────────────────────
@@ -70,7 +70,7 @@ Write-Host "==> Compiling installer with $iscc ..." -ForegroundColor Cyan
 & $iscc "/DAppVersion=$Version" "/DPublishDir=$publishDir" $iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
 
-$setup = Join-Path $installerDir "Output\HyperVNetworkSwitcher-Setup.exe"
+$setup = Join-Path $installerDir "Output\HyperVManagerTray-Setup.exe"
 
 # ── 5. Sign the installer exe ────────────────────────────────────────────────
 # Sign before computing the SHA so the printed hash matches the distributed file.

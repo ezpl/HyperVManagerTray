@@ -8,12 +8,12 @@
 ; /DPublishDir and /DAppVersion to ISCC.
 
 #define AppName       "Hyper-V Manager Tray"
-#define AppExe        "HyperVNetworkSwitcher.exe"
+#define AppExe        "HyperVManagerTray.exe"
 #define AppPublisher  "ezpl"
 #define AppUrl        "https://github.com/ezpl/HyperVNetworkSwitcher"
 ; Matches the task name used by the app's in-tray "Run on startup" toggle (StartupManager),
 ; so the installer option and the tray toggle control the exact same logon task.
-#define TaskName      "HyperVNetworkSwitcher"
+#define TaskName      "HyperVManagerTray"
 
 #ifndef AppVersion
   #define AppVersion "2.0.0"
@@ -31,7 +31,7 @@ AppPublisher={#AppPublisher}
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}
 ; {autopf} under PrivilegesRequired=lowest resolves to %LocalAppData%\Programs.
-DefaultDirName={autopf}\HyperVNetworkSwitcher
+DefaultDirName={autopf}\HyperVManagerTray
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 UninstallDisplayName={#AppName}
@@ -41,7 +41,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=Output
-OutputBaseFilename=HyperVNetworkSwitcher-Setup
+OutputBaseFilename=HyperVManagerTray-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

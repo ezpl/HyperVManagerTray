@@ -62,8 +62,8 @@ winget install JRSoftware.InnoSetup
 ```
 
 This publishes the app fully self-contained (.NET + Windows App SDK bundled, no runtime install
-needed on the target) and compiles `installer\Output\HyperVNetworkSwitcher-Setup.exe`. Run that
-to install to `%LocalAppData%\Programs\HyperVNetworkSwitcher`. The setup offers an optional
+needed on the target) and compiles `installer\Output\HyperVManagerTray-Setup.exe`. Run that
+to install to `%LocalAppData%\Programs\HyperVManagerTray`. The setup offers an optional
 **Run at startup** (a `/RL HIGHEST` logon task — one UAC prompt, only if ticked) and preserves
 any existing `config.json` on upgrade. See [`installer/README.md`](installer/README.md) for how
 the elevation is handled.
@@ -74,7 +74,7 @@ the elevation is handled.
 dotnet publish -c Release -r win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true
 ```
 
-Output folder: `bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\` (run `HyperVNetworkSwitcher.exe` from there; the `.pri` next to it is required).
+Output folder: `bin\Release\net10.0-windows10.0.26100.0\win-x64\publish\` (run `HyperVManagerTray.exe` from there; the `.pri` next to it is required).
 
 ### Auto-start with Windows
 
@@ -86,26 +86,26 @@ The toggle is equivalent to:
 
 ```powershell
 # Enable
-schtasks /Create /TN "HyperVNetworkSwitcher" /TR "\"%LOCALAPPDATA%\Programs\HyperVNetworkSwitcher\HyperVNetworkSwitcher.exe\"" /SC ONLOGON /RL HIGHEST /F
+schtasks /Create /TN "HyperVManagerTray" /TR "\"%LOCALAPPDATA%\Programs\HyperVManagerTray\HyperVManagerTray.exe\"" /SC ONLOGON /RL HIGHEST /F
 # Disable
-schtasks /Delete /TN "HyperVNetworkSwitcher" /F
+schtasks /Delete /TN "HyperVManagerTray" /F
 ```
 
-**Where it's stored** — the task named `HyperVNetworkSwitcher` lives in:
+**Where it's stored** — the task named `HyperVManagerTray` lives in:
 
 | | |
 |---|---|
-| **Task Scheduler** | Task Scheduler Library → `HyperVNetworkSwitcher` |
-| **On disk** | `C:\Windows\System32\Tasks\HyperVNetworkSwitcher` (XML definition) |
-| **Registry** | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\HyperVNetworkSwitcher` |
+| **Task Scheduler** | Task Scheduler Library → `HyperVManagerTray` |
+| **On disk** | `C:\Windows\System32\Tasks\HyperVManagerTray` (XML definition) |
+| **Registry** | `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree\HyperVManagerTray` |
 
 To inspect or verify it from PowerShell:
 
 ```powershell
-schtasks /Query /TN "HyperVNetworkSwitcher" /V /FO LIST
+schtasks /Query /TN "HyperVManagerTray" /V /FO LIST
 ```
 
-> **Migration note:** older versions wrote a value named `HyperVNetworkSwitcher` under `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`. That entry never worked for this elevated app and is now removed automatically the first time you toggle **Run on startup**.
+> **Migration note:** older versions wrote a value named `HyperVManagerTray` under `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`. That entry never worked for this elevated app and is now removed automatically the first time you toggle **Run on startup**.
 
 ---
 
@@ -178,7 +178,7 @@ Metrics refresh every ~2 s **only while the dashboard is open**, so a closed das
 ## Project structure
 
 ```
-HyperVNetworkSwitcher/
+HyperVManagerTray/
 ├─ App.xaml(.cs)            WinUI app entry point — owns services, tray icon, dashboard
 ├─ MainWindow.xaml(.cs)     hidden host window (keeps the app alive)
 ├─ Services/                UI-agnostic logic (no WinUI dependency)
@@ -245,7 +245,7 @@ MIT — see [`LICENSE`](LICENSE).
 
 Logs are written to:
 ```
-%APPDATA%\HyperVNetworkSwitcher\switcher.log
+%APPDATA%\HyperVManagerTray\switcher.log
 ```
 
 Each switch change, rule evaluation, and error is recorded there.

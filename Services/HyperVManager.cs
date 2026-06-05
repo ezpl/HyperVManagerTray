@@ -1,9 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Runs Hyper-V PowerShell cmdlets by spawning powershell.exe as a child process.

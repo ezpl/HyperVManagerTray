@@ -2,9 +2,9 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>Result of evaluating config rules against the current host network state.</summary>
 public sealed record MatchResult(string RuleName, string VirtualSwitch, IReadOnlyList<string> TargetVms)

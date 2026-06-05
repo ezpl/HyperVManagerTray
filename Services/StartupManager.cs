@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Manages "run at Windows logon" for this elevated app.
@@ -15,9 +15,9 @@ namespace HyperVNetworkSwitcher.Services;
 /// </summary>
 internal sealed class StartupManager
 {
-    private const string TaskName       = "HyperVNetworkSwitcher";
+    private const string TaskName       = "HyperVManagerTray";
     private const string LegacyRunKey   = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string LegacyRunValue = "HyperVNetworkSwitcher";
+    private const string LegacyRunValue = "HyperVManagerTray";
 
     private readonly ILogger<StartupManager> _logger;
 

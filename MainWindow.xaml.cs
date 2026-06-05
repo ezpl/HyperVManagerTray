@@ -1,6 +1,6 @@
 using Microsoft.UI.Xaml;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray;
 
 /// <summary>Invisible host window — never shown; keeps the WinUI app alive (see <see cref="App"/>).</summary>
 public sealed partial class MainWindow : Window

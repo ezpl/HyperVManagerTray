@@ -16,15 +16,15 @@ winget install JRSoftware.InnoSetup   # Inno Setup compiler
 `build-installer.ps1`:
 1. Auto-generates `Assets\app.ico` if it is missing (calls `Generate-AppIcon.ps1`).
 2. Publishes the app fully self-contained (win-x64, Windows App SDK + .NET bundled, no trimming).
-3. Compiles `HyperVNetworkSwitcher.iss` with `ISCC.exe`.
+3. Compiles `HyperVManagerTray.iss` with `ISCC.exe`.
 
-Output: `installer\Output\HyperVNetworkSwitcher-Setup.exe` (and its SHA-256). Installer
+Output: `installer\Output\HyperVManagerTray-Setup.exe` (and its SHA-256). Installer
 wizard shows the app icon (`app.ico`) in the `[Setup]` `SetupIconFile` entry.
 
 ## How elevation works
 
 - **Installing needs no admin.** `PrivilegesRequired=lowest` → installs under
-  `%LocalAppData%\Programs\HyperVNetworkSwitcher`, no UAC for the install itself.
+  `%LocalAppData%\Programs\HyperVManagerTray`, no UAC for the install itself.
 - **The app is `requireAdministrator`** and elevates itself at runtime (the one UAC prompt it
   needs for Hyper-V).
 - **"Run at startup"** (optional, off by default) creates a `/RL HIGHEST /SC ONLOGON` scheduled
@@ -42,7 +42,7 @@ User config (`config.json`) is preserved across upgrades (installed `onlyifdoesn
 ## Code signing
 
 The Release build is automatically code-signed via the `SignOutput` MSBuild target in
-`HyperVNetworkSwitcher.csproj`. It calls `sign.ps1` after each Release build.
+`HyperVManagerTray.csproj`. It calls `sign.ps1` after each Release build.
 
 The certificate is self-signed (`CN=Zero Zero Software`) — the same cert used by the sibling
 LenovoTray project. On a fresh dev machine, run `.\sign.ps1 -Setup` once to create it and

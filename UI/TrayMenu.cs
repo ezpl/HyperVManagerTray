@@ -1,10 +1,10 @@
 using System.Diagnostics;
 using Microsoft.UI.Xaml.Controls;
-using HyperVNetworkSwitcher.Helpers;
-using HyperVNetworkSwitcher.Models;
-using HyperVNetworkSwitcher.Services;
+using HyperVManagerTray.Helpers;
+using HyperVManagerTray.Models;
+using HyperVManagerTray.Services;
 
-namespace HyperVNetworkSwitcher.UI;
+namespace HyperVManagerTray.UI;
 
 /// <summary>
 /// The tray icon's right-click context menu.
@@ -209,7 +209,7 @@ internal sealed class TrayMenu
 
     private static string LogPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "HyperVNetworkSwitcher", "switcher.log");
+        "HyperVManagerTray", "switcher.log");
 
     private static void OpenPath(string path)
     {

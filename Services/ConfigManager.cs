@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 using Microsoft.Extensions.Logging;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>
 /// Loads <c>config.json</c>, exposes the current <see cref="AppConfig"/>, and watches the file

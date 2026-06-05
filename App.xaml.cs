@@ -2,11 +2,11 @@ using H.NotifyIcon;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using HyperVNetworkSwitcher.Helpers;
-using HyperVNetworkSwitcher.Services;
-using HyperVNetworkSwitcher.UI;
+using HyperVManagerTray.Helpers;
+using HyperVManagerTray.Services;
+using HyperVManagerTray.UI;
 
-namespace HyperVNetworkSwitcher;
+namespace HyperVManagerTray;
 
 /// <summary>
 /// Application entry point.  Owns the long-lived services (config / Hyper-V / network monitor),
@@ -47,7 +47,7 @@ public partial class App : Application
         {
             var logDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "HyperVNetworkSwitcher");
+                "HyperVManagerTray");
             Directory.CreateDirectory(logDir);
             _loggerFactory = LoggerFactory.Create(b =>
             {

@@ -1,4 +1,4 @@
-namespace HyperVNetworkSwitcher.Helpers;
+namespace HyperVManagerTray.Helpers;
 
 /// <summary>
 /// Minimal <see cref="System.Windows.Input.ICommand"/> that delegates to an <see cref="Action"/>.

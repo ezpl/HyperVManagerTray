@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 
-namespace HyperVNetworkSwitcher.Helpers;
+namespace HyperVManagerTray.Helpers;
 
 /// <summary>
 /// Generates the tray icon at runtime (no image assets): a VM-monitor glyph with a network

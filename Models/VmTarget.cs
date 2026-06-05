@@ -1,4 +1,4 @@
-namespace HyperVNetworkSwitcher.Models;
+namespace HyperVManagerTray.Models;
 
 /// <summary>A Hyper-V virtual machine this app manages, plus the NIC and fallback switch to use.</summary>
 public sealed class VmTarget

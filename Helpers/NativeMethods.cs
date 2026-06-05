@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace HyperVNetworkSwitcher.Helpers;
+namespace HyperVManagerTray.Helpers;
 
 /// <summary>Thin wrappers around Win32 APIs used for DPI-aware popup positioning.</summary>
 internal static class NativeMethods

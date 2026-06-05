@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Code-signs HyperVNetworkSwitcher.exe with a self-signed certificate.
+    Code-signs HyperVManagerTray.exe with a self-signed certificate.
 
 .DESCRIPTION
     Run once with -Setup to create a self-signed code-signing certificate in the
@@ -9,7 +9,7 @@
 
     Without -Setup, the script signs the target executable using the existing
     certificate. This mode is invoked automatically by the Release build (see the
-    SignOutput target in HyperVNetworkSwitcher.csproj) and exits 0 if no certificate
+    SignOutput target in HyperVManagerTray.csproj) and exits 0 if no certificate
     is found, so it never breaks a build.
 
     To use a real CA-issued certificate instead, import it into Cert:\CurrentUser\My
@@ -88,7 +88,7 @@ if ($Setup) {
 
 # Default to the Release apphost when no path is supplied.
 if (-not $Path) {
-    $Path = Join-Path $PSScriptRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\HyperVNetworkSwitcher.exe"
+    $Path = Join-Path $PSScriptRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\HyperVManagerTray.exe"
 }
 
 if (-not (Test-Path $Path)) {

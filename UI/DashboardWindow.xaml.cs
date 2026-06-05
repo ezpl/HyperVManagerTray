@@ -4,11 +4,11 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
-using HyperVNetworkSwitcher.Helpers;
-using HyperVNetworkSwitcher.Models;
-using HyperVNetworkSwitcher.Services;
+using HyperVManagerTray.Helpers;
+using HyperVManagerTray.Models;
+using HyperVManagerTray.Services;
 
-namespace HyperVNetworkSwitcher.UI;
+namespace HyperVManagerTray.UI;
 
 /// <summary>
 /// Borderless Mica popup: host-network status card on top, then a control card per configured

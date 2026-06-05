@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Application
-    x:Class="HyperVNetworkSwitcher.App"
+    x:Class="HyperVManagerTray.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:tb="using:H.NotifyIcon">
@@ -22,7 +22,7 @@
 
             <tb:TaskbarIcon
                 x:Key="TrayIcon"
-                ToolTipText="HyperV Network Switcher"
+                ToolTipText="Hyper-V Manager Tray"
                 NoLeftClickDelay="True"/>
         </ResourceDictionary>
     </Application.Resources>

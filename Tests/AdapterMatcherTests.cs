@@ -1,8 +1,8 @@
 using System.Net;
-using HyperVNetworkSwitcher.Services;
+using HyperVManagerTray.Services;
 using Xunit;
 
-namespace HyperVNetworkSwitcher.Tests;
+namespace HyperVManagerTray.Tests;
 
 public class AdapterMatcherTests
 {

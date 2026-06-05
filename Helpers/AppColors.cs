@@ -1,7 +1,7 @@
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
 
-namespace HyperVNetworkSwitcher.Helpers;
+namespace HyperVManagerTray.Helpers;
 
 /// <summary>
 /// Shared colour constants and pre-allocated brushes (avoids allocating brushes on every UI

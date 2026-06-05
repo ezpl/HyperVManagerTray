@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace HyperVNetworkSwitcher.Services;
+namespace HyperVManagerTray.Services;
 
 /// <summary>Outcome of running an external process.</summary>
 /// <param name="Success">True when the process exited with code 0.</param>

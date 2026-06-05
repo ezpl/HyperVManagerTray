@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 using Xunit;
 
-namespace HyperVNetworkSwitcher.Tests;
+namespace HyperVManagerTray.Tests;
 
 /// <summary>Mirrors the JSON options ConfigManager uses, to lock the config.json contract.</summary>
 public class ConfigDeserializeTests

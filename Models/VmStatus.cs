@@ -1,4 +1,4 @@
-namespace HyperVNetworkSwitcher.Models;
+namespace HyperVManagerTray.Models;
 
 /// <summary>
 /// Live state + metrics for a Hyper-V VM, deserialised from a <c>Get-VM</c> PowerShell query.

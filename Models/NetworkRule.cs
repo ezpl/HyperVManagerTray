@@ -1,4 +1,4 @@
-namespace HyperVNetworkSwitcher.Models;
+namespace HyperVManagerTray.Models;
 
 /// <summary>
 /// Match conditions for a <see cref="NetworkRule"/>.  Both are optional; when both are set

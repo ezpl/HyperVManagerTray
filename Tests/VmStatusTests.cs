@@ -1,7 +1,7 @@
-using HyperVNetworkSwitcher.Models;
+using HyperVManagerTray.Models;
 using Xunit;
 
-namespace HyperVNetworkSwitcher.Tests;
+namespace HyperVManagerTray.Tests;
 
 public class VmStatusTests
 {
