@@ -112,6 +112,60 @@ public sealed class ConfigManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Appends a new <see cref="VmTarget"/> to config.json and reloads.
+    /// Does nothing if a VM with the same name is already present.
+    /// </summary>
+    public void AddVmToConfig(string name, string nicName)
+    {
+        if (_config.VirtualMachines.Any(v =>
+                v.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogInformation("AddVmToConfig: '{Name}' is already in config — skipping.", name);
+            return;
+        }
+
+        _watcher.EnableRaisingEvents = false;
+        try
+        {
+            var newVm = new VmTarget
+            {
+                Name    = name,
+                NicName = string.IsNullOrWhiteSpace(nicName) ? "Network Adapter" : nicName,
+            };
+
+            var updated = new AppConfig
+            {
+                VirtualMachines = [.. _config.VirtualMachines, newVm],
+                Rules           = _config.Rules,
+                Fallback        = _config.Fallback,
+            };
+
+            var writeOptions = new JsonSerializerOptions
+            {
+                WriteIndented            = true,
+                PropertyNamingPolicy     = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition   = JsonIgnoreCondition.WhenWritingNull,
+                Converters               = { new JsonStringEnumConverter() }
+            };
+
+            File.WriteAllText(_configPath, JsonSerializer.Serialize(updated, writeOptions));
+            _logger.LogInformation("VM '{Name}' added and saved to {Path}", name, _configPath);
+
+            Load();
+            ConfigReloaded?.Invoke(this, _config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save new VM '{Name}'", name);
+            throw;
+        }
+        finally
+        {
+            _watcher.EnableRaisingEvents = true;
+        }
+    }
+
     /// <summary>Returns the expected config.json path: next to the executable.</summary>
     public static string GetConfigPath() =>
         Path.Combine(AppContext.BaseDirectory, "config.json");

@@ -20,6 +20,14 @@ public sealed class HyperVManager : IDisposable
     private readonly ILogger<HyperVManager> _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);  // serialise concurrent calls
 
+    // ── GetAllVmsAsync cache ──────────────────────────────────────────────────
+    private List<DiscoveredVm>? _allVmsCache;
+    private DateTime _allVmsCacheUtc = DateTime.MinValue;
+    private static readonly TimeSpan AllVmsCacheTtl = TimeSpan.FromSeconds(30);
+
+    /// <summary>Represents a VM discovered on the local Hyper-V host (may or may not be in config).</summary>
+    public sealed record DiscoveredVm(string Name, string NicName);
+
     public HyperVManager(ILogger<HyperVManager> logger) => _logger = logger;
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -157,6 +165,64 @@ public sealed class HyperVManager : IDisposable
                      .Where(l => l.Length > 0)
                      .ToArray();
     }
+
+    // ── All-VM discovery ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns all VMs on the local Hyper-V host, regardless of whether they are in config.
+    /// Result is cached for 30 seconds to avoid repeated PowerShell startups.
+    /// Never throws — returns an empty list on any error.
+    /// </summary>
+    public async Task<List<DiscoveredVm>> GetAllVmsAsync(bool forceRefresh = false)
+    {
+        if (!forceRefresh && _allVmsCache is not null
+            && DateTime.UtcNow - _allVmsCacheUtc < AllVmsCacheTtl)
+        {
+            return _allVmsCache;
+        }
+
+        _logger.LogDebug("Discovering all Hyper-V VMs on localhost...");
+
+        const string script =
+            "$ProgressPreference='SilentlyContinue'; " +
+            "Get-VM -ErrorAction SilentlyContinue | ForEach-Object { " +
+            "$adapters = $_ | Get-VMNetworkAdapter -ErrorAction SilentlyContinue; " +
+            "[PSCustomObject]@{ " +
+            "Name = $_.Name; " +
+            "NicName = if ($adapters) { $adapters[0].Name } else { '' } " +
+            "} } | ConvertTo-Json -Compress";
+
+        var (ok, output) = await RunAsync(script);
+
+        if (!ok || string.IsNullOrWhiteSpace(output))
+        {
+            if (!ok) _logger.LogWarning("GetAllVmsAsync failed: {Error}", output);
+            _allVmsCache   = [];
+            _allVmsCacheUtc = DateTime.UtcNow;
+            return _allVmsCache;
+        }
+
+        try
+        {
+            var list = DeserializeArrayOrObject<DiscoveredVmJson>(output);
+            _allVmsCache = list
+                .Where(v => !string.IsNullOrWhiteSpace(v.Name))
+                .Select(v => new DiscoveredVm(v.Name, v.NicName ?? ""))
+                .ToList();
+            _allVmsCacheUtc = DateTime.UtcNow;
+            _logger.LogInformation("Discovered {Count} VM(s) on localhost.", _allVmsCache.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GetAllVmsAsync: failed to parse JSON output");
+            _allVmsCache   = [];
+            _allVmsCacheUtc = DateTime.UtcNow;
+        }
+
+        return _allVmsCache;
+    }
+
+    private sealed class DiscoveredVmJson { public string Name { get; set; } = ""; public string? NicName { get; set; } }
 
     // ── VM power control ────────────────────────────────────────────────────────
 

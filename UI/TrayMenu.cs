@@ -80,6 +80,11 @@ internal sealed class TrayMenu
     private void RebuildVmPowerMenu()
     {
         _vmPowerMenu.Items.Clear();
+
+        // Managed VMs (in config) — full power submenu
+        var configNames = new HashSet<string>(_config.Current.VirtualMachines
+            .Select(v => v.Name), StringComparer.OrdinalIgnoreCase);
+
         foreach (var vm in _config.Current.VirtualMachines)
         {
             var name = vm.Name;
@@ -93,8 +98,73 @@ internal sealed class TrayMenu
             sub.Items.Add(Item("Save",            () => _hyperV.SaveVmAsync(name)));
             _vmPowerMenu.Items.Add(sub);
         }
+
+        // Unmanaged VMs (discovered but not in config) — limited submenu
+        List<HyperVManager.DiscoveredVm> discovered;
+        try
+        {
+            // Use the cache — do NOT await here (sync context); GetAllVmsAsync is cheap
+            // when the cache is warm. If the cache is cold this call is ~1 s blocking.
+            discovered = _hyperV.GetAllVmsAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            discovered = [];
+        }
+
+        var unmanaged = discovered
+            .Where(d => !configNames.Contains(d.Name))
+            .OrderBy(d => d.Name)
+            .ToList();
+
+        if (unmanaged.Count > 0 && _vmPowerMenu.Items.Count > 0)
+            _vmPowerMenu.Items.Add(new MenuFlyoutSeparator());
+
+        foreach (var vm in unmanaged)
+        {
+            var name   = vm.Name;
+            var nicName = vm.NicName;
+            var sub    = new MenuFlyoutSubItem { Text = $"{name} (unmanaged)" };
+            sub.Items.Add(Item("Start",    () => _hyperV.StartOrResumeVmAsync(name)));
+            sub.Items.Add(Item("Shutdown", () => _hyperV.ShutdownVmAsync(name)));
+            sub.Items.Add(Item("Connect",  () => { ConnectUnmanaged(name); return Task.CompletedTask; }));
+            sub.Items.Add(new MenuFlyoutSeparator());
+            sub.Items.Add(Item("Add to config…", () =>
+            {
+                try
+                {
+                    _config.AddVmToConfig(name, nicName);
+                    NativeMethods.Info(
+                        $"Added \"{name}\" to config.\nReload to manage it fully.",
+                        AppName);
+                }
+                catch (Exception ex)
+                {
+                    NativeMethods.Error($"Failed to add VM to config:\n{ex.Message}", AppName);
+                }
+                return Task.CompletedTask;
+            }));
+            _vmPowerMenu.Items.Add(sub);
+        }
+
         if (_vmPowerMenu.Items.Count == 0)
-            _vmPowerMenu.Items.Add(new MenuFlyoutItem { Text = "(no VMs in config)", IsEnabled = false });
+            _vmPowerMenu.Items.Add(new MenuFlyoutItem { Text = "(no VMs found)", IsEnabled = false });
+    }
+
+    private static void ConnectUnmanaged(string vmName)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo("vmconnect.exe", $"localhost \"{vmName}\"")
+                { UseShellExecute = true });
+        }
+        catch
+        {
+            NativeMethods.Warn(
+                "Could not open VM Connection.\n\nEnsure Hyper-V Manager tools are installed.",
+                AppName);
+        }
     }
 
     private MenuFlyoutItem Item(string text, Func<Task> action)

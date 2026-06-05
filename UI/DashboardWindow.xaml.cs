@@ -137,34 +137,53 @@ public sealed partial class DashboardWindow : Window
         _loading = true;
         try
         {
-            var names = _config.Current.VirtualMachines.Select(v => v.Name).ToList();
-            if (names.Count == 0) return;
+            var configVms = _config.Current.VirtualMachines;
+            var names     = configVms.Select(v => v.Name).ToList();
 
-            var statuses = await _hyperV.GetVmStatusesAsync(names);
+            // Query statuses for config VMs (may be empty list — that's fine)
+            var statuses = names.Count > 0
+                ? await _hyperV.GetVmStatusesAsync(names)
+                : Array.Empty<VmStatus>();
 
-            if (DateTime.UtcNow - _lastVhdUtc > VhdPollInterval)
+            if (names.Count > 0 && DateTime.UtcNow - _lastVhdUtc > VhdPollInterval)
             {
                 foreach (var kv in await _hyperV.GetVmVhdSizesAsync(names)) _vhd[kv.Key] = kv.Value;
                 _lastVhdUtc = DateTime.UtcNow;
             }
             foreach (var s in statuses) if (_vhd.TryGetValue(s.Name, out var b)) s.VhdBytes = b;
 
+            // Discovered VMs (uses cache — fast when warm)
+            var discovered = await _hyperV.GetAllVmsAsync();
+
             DispatcherQueue.TryEnqueue(() =>
             {
-                BuildCards(statuses);
+                BuildCards(statuses, discovered);
                 if (AppWindow.IsVisible) ResizeAndPlace();
             });
         }
         finally { _loading = false; }
     }
 
-    private void BuildCards(IReadOnlyList<VmStatus> statuses)
+    private void BuildCards(IReadOnlyList<VmStatus> statuses,
+                            IReadOnlyList<HyperVManager.DiscoveredVm> discovered)
     {
         VmPanel.Children.Clear();
+
+        var configNames = new HashSet<string>(
+            _config.Current.VirtualMachines.Select(v => v.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        // Config VMs first (full cards)
         foreach (var vm in _config.Current.VirtualMachines)
         {
             var s = statuses.FirstOrDefault(x => x.Name.Equals(vm.Name, StringComparison.OrdinalIgnoreCase));
             VmPanel.Children.Add(BuildCard(vm, s));
+        }
+
+        // Discovered-only VMs (ghost cards)
+        foreach (var dvm in discovered.Where(d => !configNames.Contains(d.Name)).OrderBy(d => d.Name))
+        {
+            VmPanel.Children.Add(BuildGhostCard(dvm));
         }
     }
 
@@ -248,6 +267,91 @@ public sealed partial class DashboardWindow : Window
             BorderBrush   = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
             BorderThickness = new Thickness(1),
             Child         = rows,
+        };
+    }
+
+    /// <summary>
+    /// Builds a dimmed "ghost" card for a VM that exists on the host but is not in config.
+    /// Shows Start / Shutdown / Connect buttons only (no switch operations, no metrics).
+    /// </summary>
+    private Border BuildGhostCard(HyperVManager.DiscoveredVm vm)
+    {
+        var rows = new StackPanel { Spacing = 6 };
+
+        // Header: name + "Unmanaged" badge
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var title = new TextBlock
+        {
+            Text              = vm.Name,
+            FontSize          = 12,
+            FontWeight        = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var badge = new TextBlock
+        {
+            Text                = "Unmanaged",
+            FontSize            = 11,
+            VerticalAlignment   = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Foreground          = AppColors.IndicatorGreyBrush,
+        };
+        Grid.SetColumn(badge, 1);
+        header.Children.Add(title);
+        header.Children.Add(badge);
+        rows.Children.Add(header);
+
+        // Subtitle
+        rows.Children.Add(new TextBlock
+        {
+            Text       = "(not in config)",
+            FontSize   = 10,
+            Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+        });
+
+        // Buttons: Start, Shutdown, Connect
+        var panel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing     = 6,
+            Margin      = new Thickness(0, 2, 0, 0)
+        };
+
+        void GhostBtn(string text, Func<Task> action) => panel.Children.Add(new Button
+        {
+            Content  = text,
+            FontSize = 11,
+            Padding  = new Thickness(8, 3, 8, 3),
+            Command  = new RelayCommand(() => _ = RunThenReload(action)),
+        });
+
+        var name = vm.Name;
+        GhostBtn("Start",    () => _hyperV.StartOrResumeVmAsync(name));
+        GhostBtn("Shutdown", () => _hyperV.ShutdownVmAsync(name));
+        GhostBtn("Connect",  () =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("vmconnect.exe", $"localhost \"{name}\"")
+                    { UseShellExecute = true });
+            }
+            catch { /* ignore */ }
+            return Task.CompletedTask;
+        });
+        rows.Children.Add(panel);
+
+        return new Border
+        {
+            CornerRadius    = new CornerRadius(6),
+            Padding         = new Thickness(10, 8, 10, 8),
+            Background      = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+            BorderBrush     = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+            BorderThickness = new Thickness(1),
+            Opacity         = 0.55,
+            Child           = rows,
         };
     }
 
