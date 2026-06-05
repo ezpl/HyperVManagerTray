@@ -36,6 +36,10 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Opt native Win32 elements (tray context menu, etc.) into system dark mode.
+        // Must run before any UI is created so the menu HWND inherits the setting.
+        NativeMethods.EnableDarkModeForNativeUi();
+
         _ui         = DispatcherQueue.GetForCurrentThread();
         _hostWindow = new MainWindow();   // never shown; keeps the app alive
 

@@ -72,6 +72,39 @@ internal static class NativeMethods
         return new RECT { Left = 0, Top = 0, Right = 1920, Bottom = 1040 };
     }
 
+    // ── Native Win32 dark-mode support ─────────────────────────────────────────
+    // uxtheme.dll exposes these only by ordinal (no named exports).
+    // SetPreferredAppMode  = ordinal 135  (Win10 1903 / build 18362+)
+    // RefreshImmersiveColorPolicyState = ordinal 104
+    //
+    // Calling SetPreferredAppMode(AllowDark=1) at process startup makes Windows
+    // render native Win32 elements (menus, scrollbars) in dark mode whenever the
+    // system theme is dark — the same mechanism Electron uses internally.
+    // WinUI 3 controls are unaffected (they use their own XAML theming pipeline).
+    //
+    // Wrapped in try/catch: ordinal layout may differ on future Windows builds.
+
+    [DllImport("uxtheme.dll", EntryPoint = "#135", SetLastError = false)]
+    private static extern int SetPreferredAppMode(int mode);   // 0=Default 1=AllowDark 2=ForceDark 3=ForceLight
+
+    [DllImport("uxtheme.dll", EntryPoint = "#104", SetLastError = false)]
+    private static extern void RefreshImmersiveColorPolicyState();
+
+    /// <summary>
+    /// Opts the process into Windows dark-mode rendering for native Win32 UI elements
+    /// (context menus, etc.).  Call once, before any UI is shown.  No-ops safely on
+    /// older Windows builds where the ordinals do not exist.
+    /// </summary>
+    internal static void EnableDarkModeForNativeUi()
+    {
+        try
+        {
+            SetPreferredAppMode(1); // AllowDark — follows the system preference
+            RefreshImmersiveColorPolicyState();
+        }
+        catch { /* ordinal absent on old builds — non-fatal */ }
+    }
+
     // ── Message boxes (WinUI has no built-in MessageBox) ────────────────────────
     private const uint MB_ICONERROR = 0x10, MB_ICONQUESTION = 0x20, MB_ICONWARNING = 0x30,
                        MB_ICONINFORMATION = 0x40, MB_YESNO = 0x4, MB_TOPMOST = 0x40000;
