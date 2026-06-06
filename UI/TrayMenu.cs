@@ -96,6 +96,18 @@ internal sealed class TrayMenu
             sub.Items.Add(Item("Pause",           () => _hyperV.SuspendVmAsync(name)));
             sub.Items.Add(Item("Resume",          () => _hyperV.ResumeVmAsync(name)));
             sub.Items.Add(Item("Save",            () => _hyperV.SaveVmAsync(name)));
+            sub.Items.Add(new MenuFlyoutSeparator());
+            sub.Items.Add(Item("Remove from config…", () =>
+            {
+                if (NativeMethods.Confirm(
+                        $"Remove {name} from config.json?\n\nThis only removes the app's management of this VM — it does not delete the VM.",
+                        "Remove VM from Config"))
+                {
+                    _config.RemoveVmFromConfig(name);
+                    NativeMethods.Info($"{name} removed from config.", AppName);
+                }
+                return Task.CompletedTask;
+            }));
             _vmPowerMenu.Items.Add(sub);
         }
 
