@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
 namespace HyperVManagerTray.Services;
@@ -17,7 +18,8 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
         bool   UpdateAvailable,
         string LatestVersion,   // empty = network error; "none" = no releases yet
         string ReleasePageUrl,
-        string InstallerUrl);   // direct .exe download URL from release assets; empty if not found
+        string InstallerUrl,    // direct .exe download URL from release assets; empty if not found
+        string ReleaseNotes);   // body text from the GitHub release, stripped of markdown
 
     /// <summary>
     /// Queries the GitHub Releases API. Never throws.
@@ -36,7 +38,7 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 logger.LogInformation("Update check: no releases found on GitHub yet");
-                return new(false, "none", string.Empty, string.Empty);
+                return new(false, "none", string.Empty, string.Empty, string.Empty);
             }
 
             response.EnsureSuccessStatusCode();
@@ -47,6 +49,8 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
             var root        = doc.RootElement;
             var tagName     = root.GetProperty("tag_name").GetString() ?? string.Empty;
             var releaseUrl  = root.TryGetProperty("html_url",  out var u) ? u.GetString() ?? string.Empty : string.Empty;
+            var bodyMd      = root.TryGetProperty("body",      out var b) ? b.GetString() : null;
+            var releaseNotes = StripMarkdown(bodyMd);
 
             // Parse installer URL from assets array — find the first .exe asset
             var installerUrl = string.Empty;
@@ -64,23 +68,23 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
                 }
             }
 
-            // tag_name is e.g. "v2.1.1" — strip leading 'v'
+            // tag_name is e.g. "v2.1.2" — strip leading 'v'
             var latestStr = tagName.TrimStart('v');
             if (!Version.TryParse(latestStr, out var latest))
             {
                 logger.LogWarning("GitHub returned an unparseable tag_name: {Tag}", tagName);
-                return new(false, string.Empty, string.Empty, string.Empty);
+                return new(false, string.Empty, string.Empty, string.Empty, string.Empty);
             }
 
             var running = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
             logger.LogInformation("Update check: running={Running} latest={Latest}", running, latest);
 
-            return new(latest > running, latestStr, releaseUrl, installerUrl);
+            return new(latest > running, latestStr, releaseUrl, installerUrl, releaseNotes);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Update check failed");
-            return new(false, string.Empty, string.Empty, string.Empty);
+            return new(false, string.Empty, string.Empty, string.Empty, string.Empty);
         }
     }
 
@@ -123,5 +127,28 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
 
         logger.LogInformation("Installer downloaded to {Path} ({Bytes:N0} bytes)", dest, downloaded);
         return dest;
+    }
+
+    /// <summary>
+    /// Converts a GitHub-flavoured Markdown string to plain text suitable for display in a
+    /// Win32 Task Dialog.  Handles the common patterns used in release notes:
+    /// ATX headers (## …), bold (**…**), italic (*…*), inline code (`…`), list bullets (- / *).
+    /// </summary>
+    private static string StripMarkdown(string? md)
+    {
+        if (string.IsNullOrWhiteSpace(md)) return string.Empty;
+
+        // ATX headers: ## Title → Title
+        md = Regex.Replace(md, @"^#{1,6}\s+", string.Empty, RegexOptions.Multiline);
+        // Bold / italic: ***text***, **text**, *text* → text
+        md = Regex.Replace(md, @"\*{1,3}(.+?)\*{1,3}", "$1");
+        // Inline code: `code` → code
+        md = Regex.Replace(md, @"`([^`]+)`", "$1");
+        // Unordered list: - item or * item → • item
+        md = Regex.Replace(md, @"^[ \t]*[-*]\s+", "• ", RegexOptions.Multiline);
+        // Collapse 3+ consecutive blank lines to 2
+        md = Regex.Replace(md, @"\n{3,}", "\n\n");
+
+        return md.Trim();
     }
 }

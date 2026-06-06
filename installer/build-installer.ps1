@@ -15,11 +15,12 @@
         winget install JRSoftware.InnoSetup
 
 .EXAMPLE
-    .\build-installer.ps1 -Version 2.0.1
+    .\build-installer.ps1                  # auto-bumps patch (e.g. 2.1.2 → 2.1.3)
+    .\build-installer.ps1 -Version 2.2.0   # explicit override
 #>
 [CmdletBinding()]
 param(
-    [string] $Version = "2.0.0"
+    [string] $Version = ""   # empty = auto-bump patch from .csproj
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,6 +30,28 @@ $root         = Split-Path $installerDir -Parent
 $proj         = Join-Path $root "HyperVManagerTray.csproj"
 $publishDir   = Join-Path $root "publish"
 $iss          = Join-Path $installerDir "HyperVManagerTray.iss"
+
+# ── 0. Resolve / bump version ────────────────────────────────────────────────
+$projContent = Get-Content $proj -Raw
+$vMatch      = [regex]::Match($projContent, '<Version>(\d+\.\d+\.\d+)</Version>')
+if (-not $vMatch.Success) { throw "Cannot find <Version>x.y.z</Version> in $proj" }
+$currentVersion = $vMatch.Groups[1].Value
+
+if ([string]::IsNullOrEmpty($Version)) {
+    # Auto-bump: increment patch component
+    $v       = [System.Version]$currentVersion
+    $Version = "{0}.{1}.{2}" -f $v.Major, $v.Minor, ($v.Build + 1)
+    Write-Host "==> Auto-bumping version:  $currentVersion  ->  $Version" -ForegroundColor Cyan
+} else {
+    Write-Host "==> Using explicit version: $Version" -ForegroundColor Cyan
+}
+
+# Write the new version back to the .csproj (idempotent if already correct)
+if ($currentVersion -ne $Version) {
+    ($projContent -replace "<Version>$currentVersion</Version>", "<Version>$Version</Version>") |
+        Set-Content $proj -NoNewline
+    Write-Host "    Updated HyperVManagerTray.csproj: $currentVersion -> $Version" -ForegroundColor DarkGray
+}
 
 # ── 1. Ensure Assets\app.ico exists ─────────────────────────────────────────
 $appIco = Join-Path $root "Assets\app.ico"

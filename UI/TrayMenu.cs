@@ -281,49 +281,50 @@ internal sealed class TrayMenu
 
         if (result.UpdateAvailable)
         {
-            // Prefer direct download; fall back to opening the releases page.
             bool canDownload = !string.IsNullOrEmpty(result.InstallerUrl);
 
-            bool confirmed = NativeMethods.Confirm(
-                $"Version {result.LatestVersion} is available.\n\nCurrent: {running}\n\n" +
-                (canDownload
-                    ? "Download and install now? The app will close and restart automatically."
-                    : "Open the releases page?"),
-                AppName);
+            // Win32 TaskDialog — 3 custom buttons (Update / Releases page / Cancel) +
+            // expandable release notes section.  Blocks until the user responds; safe
+            // to call from any thread without needing a WinUI XamlRoot.
+            var action = NativeMethods.ShowUpdateDialog(
+                result.LatestVersion, running,
+                result.ReleaseNotes,  AppName,
+                canDownload);
 
-            if (!confirmed) return;
-
-            if (canDownload)
+            switch (action)
             {
-                // Download in the background; the installer closes and relaunches the app.
-                NativeMethods.Info(
-                    $"Downloading v{result.LatestVersion}...\n\nThe installer will launch automatically when ready.",
-                    AppName);
+                case NativeMethods.UpdateAction.Update:
+                    // Download in background; Inno Setup's CloseApplications=yes restarts us.
+                    NativeMethods.Info(
+                        $"Downloading v{result.LatestVersion}...\n\nThe installer will launch automatically when ready.",
+                        AppName);
 
-                _ = Task.Run(async () =>
-                {
-                    try
+                    _ = Task.Run(async () =>
                     {
-                        var path = await _updateChecker
-                            .DownloadInstallerAsync(result.InstallerUrl)
-                            .ConfigureAwait(false);
+                        try
+                        {
+                            var path = await _updateChecker
+                                .DownloadInstallerAsync(result.InstallerUrl)
+                                .ConfigureAwait(false);
+                            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+                        }
+                        catch (Exception ex)
+                        {
+                            NativeMethods.Warn(
+                                $"Download failed:\n{ex.Message}\n\nTry updating from the releases page.",
+                                AppName);
+                            if (!string.IsNullOrEmpty(result.ReleasePageUrl))
+                                Process.Start(new ProcessStartInfo(result.ReleasePageUrl) { UseShellExecute = true });
+                        }
+                    });
+                    break;
 
-                        // Run installer — CloseApplications=yes in the .iss will shut us down.
-                        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-                    }
-                    catch (Exception ex)
-                    {
-                        NativeMethods.Warn(
-                            $"Download failed:\n{ex.Message}\n\nTry updating from the releases page.",
-                            AppName);
-                        if (!string.IsNullOrEmpty(result.ReleasePageUrl))
-                            Process.Start(new ProcessStartInfo(result.ReleasePageUrl) { UseShellExecute = true });
-                    }
-                });
-            }
-            else
-            {
-                Process.Start(new ProcessStartInfo(result.ReleasePageUrl) { UseShellExecute = true });
+                case NativeMethods.UpdateAction.ShowReleases:
+                    if (!string.IsNullOrEmpty(result.ReleasePageUrl))
+                        Process.Start(new ProcessStartInfo(result.ReleasePageUrl) { UseShellExecute = true });
+                    break;
+
+                // Cancel — do nothing
             }
         }
         else if (result.LatestVersion == "none")

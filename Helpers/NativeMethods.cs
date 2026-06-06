@@ -125,4 +125,146 @@ internal static class NativeMethods
     /// <summary>Shows a Yes/No prompt; returns true if the user chose Yes.</summary>
     internal static bool Confirm(string text, string caption)
         => MessageBoxW(IntPtr.Zero, text, caption, MB_YESNO | MB_ICONQUESTION | MB_TOPMOST) == IDYES;
+
+    // ── Task Dialog — 3-button update prompt ────────────────────────────────────
+    // TaskDialogIndirect supports fully custom button text and an expandable section,
+    // making it ideal for the "update available" prompt with inline release notes.
+    //
+    // Struct layout is pinned with LayoutKind.Explicit at verified 64-bit byte offsets
+    // (total size 176 bytes) to avoid any ambiguity with the sequential-layout marshaler.
+
+    internal enum UpdateAction { Update, ShowReleases, Cancel }
+
+    private const uint TDF_ALLOW_DIALOG_CANCELLATION = 0x0008;
+    private const uint TDF_SIZE_TO_CONTENT           = 0x01000000;
+    private const uint TDCBF_CANCEL_BUTTON           = 0x0008;
+
+    // TD_INFORMATION_ICON = MAKEINTRESOURCEW(-3) = (WCHAR*)0xFFFD (resource ID, not HICON)
+    private static readonly IntPtr TD_INFORMATION_ICON = new(65533);
+
+    // TASKDIALOGCONFIG — 64-bit layout, Size=176.
+    // Fields that are unused in our call are left zero-initialised by the struct default.
+    [StructLayout(LayoutKind.Explicit, Size = 176)]
+    private struct TASKDIALOGCONFIG
+    {
+        [FieldOffset(0)]   public uint   cbSize;
+        [FieldOffset(8)]   public IntPtr hwndParent;
+        [FieldOffset(16)]  public IntPtr hInstance;
+        [FieldOffset(24)]  public uint   dwFlags;
+        [FieldOffset(28)]  public uint   dwCommonButtons;
+        [FieldOffset(32)]  public IntPtr pszWindowTitle;
+        [FieldOffset(40)]  public IntPtr hMainIcon;           // union: HICON or resource PCWSTR
+        [FieldOffset(48)]  public IntPtr pszMainInstruction;
+        [FieldOffset(56)]  public IntPtr pszContent;
+        [FieldOffset(64)]  public uint   cButtons;
+        [FieldOffset(72)]  public IntPtr pButtons;
+        [FieldOffset(80)]  public int    nDefaultButton;
+        [FieldOffset(84)]  public uint   cRadioButtons;
+        [FieldOffset(88)]  public IntPtr pRadioButtons;
+        [FieldOffset(96)]  public int    nDefaultRadioButton;
+        [FieldOffset(104)] public IntPtr pszVerificationText;
+        [FieldOffset(112)] public IntPtr pszExpandedInformation;
+        [FieldOffset(120)] public IntPtr pszExpandedControlText;
+        [FieldOffset(128)] public IntPtr pszCollapsedControlText;
+        [FieldOffset(136)] public IntPtr hFooterIcon;
+        [FieldOffset(144)] public IntPtr pszFooter;
+        [FieldOffset(152)] public IntPtr pfCallback;
+        [FieldOffset(160)] public IntPtr lpCallbackData;
+        [FieldOffset(168)] public uint   cxWidth;
+    }
+
+    // TASKDIALOG_BUTTON — 64-bit layout: int(4) + pad(4) + ptr(8) = 16 bytes.
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    private struct TASKDIALOG_BUTTON
+    {
+        [FieldOffset(0)] public int    nButtonID;
+        [FieldOffset(8)] public IntPtr pszButtonText;
+    }
+
+    [DllImport("comctl32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
+    private static extern int TaskDialogIndirect(
+        ref TASKDIALOGCONFIG pTaskConfig,
+        out int              pnButton,
+        IntPtr               pnRadioButton,
+        IntPtr               pfVerificationFlagChecked);
+
+    /// <summary>
+    /// Shows the "update available" Task Dialog with up to three buttons
+    /// (Update / Releases page / Cancel) and an expandable release-notes section.
+    /// Blocks until the user responds.  Safe to call from any thread.
+    /// </summary>
+    /// <param name="canDownload">
+    /// When <c>true</c> an "Update" button is shown; when <c>false</c> only
+    /// "Releases page" is shown (direct download URL was not found in the release assets).
+    /// </param>
+    internal static UpdateAction ShowUpdateDialog(
+        string latestVersion, string runningVersion,
+        string releaseNotes,  string appName,
+        bool   canDownload)
+    {
+        // Collect all unmanaged string allocations so we can free them in one pass.
+        var strings = new List<IntPtr>(12);
+        IntPtr Str(string? s)
+        {
+            if (s is null) return IntPtr.Zero;
+            var p = Marshal.StringToHGlobalUni(s);
+            strings.Add(p);
+            return p;
+        }
+
+        const int BtnUpdate   = 100;
+        const int BtnReleases = 101;
+        int   btnCount  = canDownload ? 2 : 1;
+        int   btnSize   = Marshal.SizeOf<TASKDIALOG_BUTTON>();
+        var   pButtons  = Marshal.AllocHGlobal(btnSize * btnCount);
+        try
+        {
+            if (canDownload)
+            {
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnUpdate,   pszButtonText = Str("Update") },
+                    pButtons, false);
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnReleases, pszButtonText = Str("Releases page") },
+                    IntPtr.Add(pButtons, btnSize), false);
+            }
+            else
+            {
+                Marshal.StructureToPtr(
+                    new TASKDIALOG_BUTTON { nButtonID = BtnReleases, pszButtonText = Str("Releases page") },
+                    pButtons, false);
+            }
+
+            var hasNotes = !string.IsNullOrWhiteSpace(releaseNotes);
+            var config   = new TASKDIALOGCONFIG
+            {
+                cbSize                  = 176,
+                dwFlags                 = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT,
+                dwCommonButtons         = TDCBF_CANCEL_BUTTON,
+                pszWindowTitle          = Str(appName),
+                hMainIcon               = TD_INFORMATION_ICON,
+                pszMainInstruction      = Str($"Version {latestVersion} is available"),
+                pszContent              = Str($"You are running version {runningVersion}."),
+                cButtons                = (uint)btnCount,
+                pButtons                = pButtons,
+                nDefaultButton          = canDownload ? BtnUpdate : BtnReleases,
+                pszExpandedInformation  = Str(hasNotes ? releaseNotes : "No release notes provided."),
+                pszCollapsedControlText = Str("Show release notes"),
+                pszExpandedControlText  = Str("Hide release notes"),
+            };
+
+            TaskDialogIndirect(ref config, out int nButton, IntPtr.Zero, IntPtr.Zero);
+            return nButton switch
+            {
+                BtnUpdate   => UpdateAction.Update,
+                BtnReleases => UpdateAction.ShowReleases,
+                _           => UpdateAction.Cancel,
+            };
+        }
+        finally
+        {
+            foreach (var p in strings) Marshal.FreeHGlobal(p);
+            Marshal.FreeHGlobal(pButtons);
+        }
+    }
 }

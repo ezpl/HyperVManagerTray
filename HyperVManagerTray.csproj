@@ -22,7 +22,7 @@
     <Product>Hyper-V Manager Tray</Product>
     <Description>System-tray app that auto-connects a Hyper-V VM to the right virtual switch and controls VMs from a dashboard.</Description>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>2.1.1</Version>
+    <Version>2.1.3</Version>
     <Authors>Zero Zero Software</Authors>
     <Company>Zero Zero Software</Company>
     <Copyright>Copyright © 2026 Zero Zero Software</Copyright>
