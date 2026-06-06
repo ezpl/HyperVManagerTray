@@ -16,6 +16,7 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
     /// <summary>
     /// Queries the GitHub Releases API for the latest release and compares it to the running version.
     /// Never throws — returns <c>UpdateAvailable = false</c> on any failure.
+    /// <c>LatestVersion</c> is empty on network/parse failure; <c>"none"</c> when the repo has no releases yet.
     /// </summary>
     public async Task<(bool UpdateAvailable, string LatestVersion, string ReleaseUrl)> CheckAsync()
     {
@@ -26,6 +27,13 @@ internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logg
 
             using var cts      = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
+
+            // 404 = no releases published yet (tags ≠ releases on GitHub)
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                logger.LogInformation("Update check: no releases found on GitHub yet");
+                return (false, "none", string.Empty);
+            }
 
             response.EnsureSuccessStatusCode();
 
