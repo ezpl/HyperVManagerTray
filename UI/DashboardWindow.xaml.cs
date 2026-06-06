@@ -229,7 +229,7 @@ public sealed partial class DashboardWindow : Window
         {
             Text       = $"{switchText}  ·  {ruleText}",
             FontSize   = 10,
-            Foreground = (SolidColorBrush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+            Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
         });
 
         // ── Metrics (running VMs only) ───────────────────────────────────────
@@ -266,7 +266,8 @@ public sealed partial class DashboardWindow : Window
         var lbl = new TextBlock
         {
             Text              = label,
-            FontSize          = 11,
+            FontSize          = 10,
+            FontWeight        = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground        = AppColors.IndicatorGreyBrush,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -290,7 +291,7 @@ public sealed partial class DashboardWindow : Window
             g.Children.Add(bar);
         }
 
-        var val = new TextBlock { Text = value, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        var val = new TextBlock { Text = value, FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(val, 2);
         g.Children.Add(val);
         return g;
