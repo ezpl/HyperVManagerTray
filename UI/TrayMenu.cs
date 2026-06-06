@@ -103,9 +103,9 @@ internal sealed class TrayMenu
         List<HyperVManager.DiscoveredVm> discovered;
         try
         {
-            // Use the cache — do NOT await here (sync context); GetAllVmsAsync is cheap
-            // when the cache is warm. If the cache is cold this call is ~1 s blocking.
-            discovered = _hyperV.GetAllVmsAsync().GetAwaiter().GetResult();
+            // Run on a thread-pool thread so the async continuations inside GetAllVmsAsync
+            // don't try to resume on the (blocked) UI dispatcher — avoids deadlock.
+            discovered = Task.Run(() => _hyperV.GetAllVmsAsync()).GetAwaiter().GetResult();
         }
         catch
         {
