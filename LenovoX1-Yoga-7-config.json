@@ -1,0 +1,41 @@
+{
+  "virtualMachines": [
+    {
+      "name": "vDev-2026",
+      "nicName": "Network Adapter",
+      "defaultSwitch": "Default Switch"
+    }
+  ],
+  "rules": [
+    {
+      "name": "B1 - Docking Network",
+      "priority": 1,
+      "conditions": {
+        "adapterMac": "48:65:EE:18:86:EF",
+        "ipCidr": "10.0.0.0/23"
+      },
+      "virtualSwitch": "Bridged",
+      "targetVms": [
+        "vDev-2026"
+      ]
+    },
+    {
+      "name": "NP - Lenovo USB Ethernet",
+      "priority": 11,
+      "conditions": {
+        "adapterMac": "60:7D:09:45:F4:E8",
+        "ipCidr": "10.10.0.0/24"
+      },
+      "virtualSwitch": "Bridged",
+      "targetVms": [
+        "vDev-2026"
+      ]
+    }
+  ],
+  "fallback": {
+    "virtualSwitch": "Default Switch",
+    "targetVms": [
+      "vDev-2026"
+    ]
+  }
+}
