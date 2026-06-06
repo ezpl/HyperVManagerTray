@@ -12,7 +12,7 @@ namespace HyperVManagerTray.Services;
 /// </summary>
 internal sealed class UpdateChecker(HttpClient http, ILogger<UpdateChecker> logger)
 {
-    private const string ReleasesApiUrl = "https://api.github.com/repos/ezpl/HyperVManagerTray/releases/latest";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/0z00z0/HyperVManagerTray/releases/latest";
 
     public record CheckResult(
         bool   UpdateAvailable,

@@ -26,7 +26,7 @@
     <Authors>Zero Zero Software</Authors>
     <Company>Zero Zero Software</Company>
     <Copyright>Copyright © 2026 Zero Zero Software</Copyright>
-    <RepositoryUrl>https://github.com/ezpl/HyperVManagerTray</RepositoryUrl>
+    <RepositoryUrl>https://github.com/0z00z0/HyperVManagerTray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
     <!-- Drop the ~27 MB ICU payload (no localized UI; all formatting/parsing is ordinal/invariant). -->
