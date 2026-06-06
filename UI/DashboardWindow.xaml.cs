@@ -155,7 +155,13 @@ public sealed partial class DashboardWindow : Window
             DispatcherQueue.TryEnqueue(() =>
             {
                 BuildCards(statuses);
-                if (AppWindow.IsVisible) ResizeAndPlace();
+                // Defer resize by one extra frame so WinUI's layout system processes
+                // the newly added card children before Measure() is called — otherwise
+                // DesiredSize still reflects the pre-cards (empty) layout.
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (AppWindow.IsVisible) ResizeAndPlace();
+                });
             });
         }
         finally { _loading = false; }
