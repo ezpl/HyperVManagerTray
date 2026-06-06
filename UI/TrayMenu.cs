@@ -64,6 +64,8 @@ internal sealed class TrayMenu
         settingsMenu.Items.Add(new MenuFlyoutItem { Text = "Check for updates", Command = new RelayCommand(() => _ = CheckForUpdatesAsync()) });
         Flyout.Items.Add(settingsMenu);
         Flyout.Items.Add(new MenuFlyoutSeparator());
+        Add("About…", ShowAbout);
+        Flyout.Items.Add(new MenuFlyoutSeparator());
         Add("Exit", onExit);
 
         RefreshState();
@@ -315,7 +317,23 @@ internal sealed class TrayMenu
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
-    private const string AppName = "Hyper-V Manager Tray";
+    private const string AppName   = "Hyper-V Manager Tray";
+    private const string Publisher  = "Zero Zero Software";
+    private const string RepoUrl    = "https://github.com/ezpl/HyperVManagerTray";
+
+    private static void ShowAbout()
+    {
+        var version = System.Reflection.Assembly.GetExecutingAssembly()
+                          .GetName().Version?.ToString(3) ?? "—";
+        bool openGitHub = NativeMethods.Confirm(
+            $"{AppName}\nVersion {version}\n\n" +
+            $"Publisher:  {Publisher}\n" +
+            $"License:    MIT\n\n" +
+            $"Open the GitHub page?",
+            $"About {AppName}");
+        if (openGitHub)
+            Process.Start(new ProcessStartInfo(RepoUrl) { UseShellExecute = true });
+    }
 
     private void Add(string text, Action action)
         => Flyout.Items.Add(new MenuFlyoutItem { Text = text, Command = new RelayCommand(action) });
