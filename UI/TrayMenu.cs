@@ -22,9 +22,11 @@ internal sealed class TrayMenu
     private readonly StartupManager _startup;
     private readonly UpdateChecker  _updateChecker;
 
-    private readonly MenuFlyoutSubItem  _overrideMenu = new() { Text = "VM Network Override" };
-    private readonly MenuFlyoutSubItem  _vmPowerMenu  = new() { Text = "VM Power" };
-    private readonly ToggleMenuFlyoutItem _startupItem = new() { Text = "Run on startup" };
+    private readonly MenuFlyoutSubItem    _overrideMenu = new() { Text = "VM Network Override" };
+    private readonly MenuFlyoutSubItem    _vmPowerMenu  = new() { Text = "VM Power" };
+    private readonly ToggleMenuFlyoutItem _startupItem  = new() { Text = "Run on startup" };
+
+    private MenuFlyoutItem? _updateBadge;
 
     public MenuFlyout Flyout { get; }
 
@@ -339,6 +341,35 @@ internal sealed class TrayMenu
         {
             NativeMethods.Warn("Could not check for updates. Check your internet connection.", AppName);
         }
+    }
+
+    /// <summary>
+    /// Inserts (or updates) an "Update available" badge at the top of the tray menu.
+    /// Safe to call more than once — subsequent calls only refresh the version text.
+    /// Clicking the badge opens the GitHub releases page immediately; the user can
+    /// get the full release-notes dialog via Settings → Check for updates.
+    /// </summary>
+    public void SetUpdateBadge(UpdateChecker.CheckResult result)
+    {
+        if (_updateBadge is not null)
+        {
+            _updateBadge.Text = $"⬆  Update available: v{result.LatestVersion}";
+            return;
+        }
+
+        _updateBadge = new MenuFlyoutItem
+        {
+            Text    = $"⬆  Update available: v{result.LatestVersion}",
+            Command = new RelayCommand(() =>
+            {
+                if (!string.IsNullOrEmpty(result.ReleasePageUrl))
+                    Process.Start(new ProcessStartInfo(result.ReleasePageUrl) { UseShellExecute = true });
+            }),
+        };
+
+        // Badge + separator always sit above everything else in the menu.
+        Flyout.Items.Insert(0, _updateBadge);
+        Flyout.Items.Insert(1, new MenuFlyoutSeparator());
     }
 
     private void ToggleStartup()

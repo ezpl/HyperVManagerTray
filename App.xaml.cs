@@ -84,6 +84,10 @@ public partial class App : Application
 
             // Populate the tooltip immediately — before the first SwitchApplied fires.
             _ = UpdateTooltipAsync();
+
+            // Background startup update check — inserts a badge at the top of the tray menu
+            // if a newer GitHub release exists.  Never blocks startup; failures are silent.
+            _ = CheckForUpdatesOnStartupAsync();
         }
         catch (Exception ex)
         {
@@ -165,6 +169,22 @@ public partial class App : Application
             try { _ui.TryEnqueue(() => _trayIcon.ToolTipText = "Hyper-V Manager Tray"); } catch { }
             _ = ex; // suppress unused-variable warning
         }
+    }
+
+    /// <summary>
+    /// Runs a silent update check in the background.  If a newer release exists on GitHub the
+    /// tray menu badge is set on the UI thread.  Network / parse failures are swallowed.
+    /// </summary>
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        if (_updateChecker is null || _menu is null) return;
+        try
+        {
+            var result = await _updateChecker.CheckAsync().ConfigureAwait(false);
+            if (result.UpdateAvailable)
+                _ui.TryEnqueue(() => _menu.SetUpdateBadge(result));
+        }
+        catch { /* never surface a background check failure */ }
     }
 
     /// <summary>Truncates <paramref name="line"/> to <paramref name="maxLen"/> chars, appending "…" if trimmed.</summary>
