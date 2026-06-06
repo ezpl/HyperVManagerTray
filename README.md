@@ -58,7 +58,7 @@ app elevates itself at runtime):
 # one-time, if Inno Setup is missing:
 winget install JRSoftware.InnoSetup
 
-.\installer\build-installer.ps1 -Version 2.0.0
+.\installer\build-installer.ps1   # auto-bumps the patch version
 ```
 
 This publishes the app fully self-contained (.NET + Windows App SDK bundled, no runtime install
