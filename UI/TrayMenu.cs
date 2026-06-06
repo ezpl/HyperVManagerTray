@@ -286,6 +286,10 @@ internal sealed class TrayMenu
             if (open)
                 Process.Start(new ProcessStartInfo(releaseUrl) { UseShellExecute = true });
         }
+        else if (latest == "none")
+        {
+            NativeMethods.Info("No releases have been published yet.", AppName);
+        }
         else if (!string.IsNullOrEmpty(latest))
         {
             NativeMethods.Info($"You're on the latest version ({running}).", AppName);
