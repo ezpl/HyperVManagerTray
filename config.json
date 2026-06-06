@@ -1,11 +1,5 @@
 {
-  "virtualMachines": [
-    {
-      "name": "MyVM",
-      "nicName": "Network Adapter",
-      "defaultSwitch": "Default Switch"
-    }
-  ],
+  "virtualMachines": [],
   "rules": [
     {
       "name": "Office LAN",

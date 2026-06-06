@@ -166,6 +166,55 @@ public sealed class ConfigManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// Removes the named VM from config.json and reloads.
+    /// Does nothing if no VM with that name exists.
+    /// </summary>
+    public void RemoveVmFromConfig(string name)
+    {
+        if (!_config.VirtualMachines.Any(v =>
+                v.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogInformation("RemoveVmFromConfig: '{Name}' not found in config — skipping.", name);
+            return;
+        }
+
+        _watcher.EnableRaisingEvents = false;
+        try
+        {
+            var updated = new AppConfig
+            {
+                VirtualMachines = [.. _config.VirtualMachines.Where(v =>
+                    !v.Name.Equals(name, StringComparison.OrdinalIgnoreCase))],
+                Rules           = _config.Rules,
+                Fallback        = _config.Fallback,
+            };
+
+            var writeOptions = new JsonSerializerOptions
+            {
+                WriteIndented            = true,
+                PropertyNamingPolicy     = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition   = JsonIgnoreCondition.WhenWritingNull,
+                Converters               = { new JsonStringEnumConverter() }
+            };
+
+            File.WriteAllText(_configPath, JsonSerializer.Serialize(updated, writeOptions));
+            _logger.LogInformation("VM '{Name}' removed and saved to {Path}", name, _configPath);
+
+            Load();
+            ConfigReloaded?.Invoke(this, _config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to remove VM '{Name}'", name);
+            throw;
+        }
+        finally
+        {
+            _watcher.EnableRaisingEvents = true;
+        }
+    }
+
     /// <summary>Returns the expected config.json path: next to the executable.</summary>
     public static string GetConfigPath() =>
         Path.Combine(AppContext.BaseDirectory, "config.json");
