@@ -25,6 +25,14 @@ public sealed class HyperVManager : IDisposable
     private DateTime _allVmsCacheUtc = DateTime.MinValue;
     private static readonly TimeSpan AllVmsCacheTtl = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Returns the cached VM list without any I/O or lock acquisition — safe to call on the
+    /// UI thread.  Returns <c>null</c> when the cache has never been populated (i.e. before
+    /// the first <see cref="GetAllVmsAsync"/> call completes).  Returns the list even when
+    /// stale; callers should trigger a background <see cref="GetAllVmsAsync"/> for the next use.
+    /// </summary>
+    public List<DiscoveredVm>? GetCachedVmsSync() => _allVmsCache;
+
     /// <summary>Represents a VM discovered on the local Hyper-V host (may or may not be in config).</summary>
     public sealed record DiscoveredVm(string Name, string NicName);
 

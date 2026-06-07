@@ -85,10 +85,43 @@ internal sealed class TrayMenu
     {
         _vmPowerMenu.Items.Clear();
 
-        // Managed VMs (in config) — full power submenu
+        // ── Read from in-memory cache ONLY — never block the UI thread ────────────
+        // GetCachedVmsSync() returns null until the first background discovery completes.
+        // When null, show a placeholder and the cache pre-warm (started by App at launch)
+        // will call RefreshState() once data arrives.
+        var allVms = _hyperV.GetCachedVmsSync();
+
+        if (allVms is null)
+        {
+            // Cache not yet populated (first few seconds after startup).
+            // Show managed-VM submenus from config (power ops only — no unmanaged section yet).
+            foreach (var vm in _config.Current.VirtualMachines)
+            {
+                var name = vm.Name;
+                var nic  = vm.NicName;
+                var sub  = new MenuFlyoutSubItem { Text = vm.Name };
+                sub.Items.Add(Item("Start",           () => _hyperV.StartOrResumeVmAsync(name)));
+                sub.Items.Add(Item("Start && Connect", () => StartAndConnect(name, nic)));
+                sub.Items.Add(Item("Shutdown",        () => _hyperV.ShutdownVmAsync(name)));
+                sub.Items.Add(Item("Pause",           () => _hyperV.SuspendVmAsync(name)));
+                sub.Items.Add(Item("Resume",          () => _hyperV.ResumeVmAsync(name)));
+                sub.Items.Add(Item("Save",            () => _hyperV.SaveVmAsync(name)));
+                _vmPowerMenu.Items.Add(sub);
+            }
+
+            if (_vmPowerMenu.Items.Count == 0)
+                _vmPowerMenu.Items.Add(new MenuFlyoutItem
+                    { Text = "Loading VMs…", IsEnabled = false });
+
+            // No background refresh needed here — App.PreWarmVmCacheAsync() owns that.
+            return;
+        }
+
+        // ── Cache is populated — build the full menu ───────────────────────────
         var configNames = new HashSet<string>(_config.Current.VirtualMachines
             .Select(v => v.Name), StringComparer.OrdinalIgnoreCase);
 
+        // Managed VMs (in config) — full power submenu + Remove from config
         foreach (var vm in _config.Current.VirtualMachines)
         {
             var name = vm.Name;
@@ -116,19 +149,7 @@ internal sealed class TrayMenu
         }
 
         // Unmanaged VMs (discovered but not in config) — limited submenu
-        List<HyperVManager.DiscoveredVm> discovered;
-        try
-        {
-            // Run on a thread-pool thread so the async continuations inside GetAllVmsAsync
-            // don't try to resume on the (blocked) UI dispatcher — avoids deadlock.
-            discovered = Task.Run(() => _hyperV.GetAllVmsAsync()).GetAwaiter().GetResult();
-        }
-        catch
-        {
-            discovered = [];
-        }
-
-        var unmanaged = discovered
+        var unmanaged = allVms
             .Where(d => !configNames.Contains(d.Name))
             .OrderBy(d => d.Name)
             .ToList();
@@ -138,9 +159,9 @@ internal sealed class TrayMenu
 
         foreach (var vm in unmanaged)
         {
-            var name   = vm.Name;
+            var name    = vm.Name;
             var nicName = vm.NicName;
-            var sub    = new MenuFlyoutSubItem { Text = $"{name} (unmanaged)" };
+            var sub     = new MenuFlyoutSubItem { Text = $"{name} (unmanaged)" };
             sub.Items.Add(Item("Start",    () => _hyperV.StartOrResumeVmAsync(name)));
             sub.Items.Add(Item("Shutdown", () => _hyperV.ShutdownVmAsync(name)));
             sub.Items.Add(Item("Connect",  () => { ConnectUnmanaged(name); return Task.CompletedTask; }));
@@ -165,6 +186,14 @@ internal sealed class TrayMenu
 
         if (_vmPowerMenu.Items.Count == 0)
             _vmPowerMenu.Items.Add(new MenuFlyoutItem { Text = "(no VMs found)", IsEnabled = false });
+
+        // Kick off a background cache refresh so the *next* menu open is up-to-date.
+        // GetAllVmsAsync() returns immediately if the cache is still fresh (< 30 s).
+        _ = Task.Run(async () =>
+        {
+            try { await _hyperV.GetAllVmsAsync().ConfigureAwait(false); }
+            catch { /* non-fatal */ }
+        });
     }
 
     private static void ConnectUnmanaged(string vmName)

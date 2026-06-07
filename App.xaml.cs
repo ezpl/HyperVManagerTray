@@ -85,6 +85,11 @@ public partial class App : Application
             // Populate the tooltip immediately — before the first SwitchApplied fires.
             _ = UpdateTooltipAsync();
 
+            // Pre-warm the VM discovery cache so the right-click menu never blocks the UI
+            // thread on first open.  Runs on the thread-pool; rebuilds the menu on the UI
+            // thread once data arrives.  Failures are silently swallowed.
+            _ = PreWarmVmCacheAsync();
+
             // Background startup update check — inserts a badge at the top of the tray menu
             // if a newer GitHub release exists.  Never blocks startup; failures are silent.
             _ = CheckForUpdatesOnStartupAsync();
@@ -169,6 +174,23 @@ public partial class App : Application
             try { _ui.TryEnqueue(() => _trayIcon.ToolTipText = "Hyper-V Manager Tray"); } catch { }
             _ = ex; // suppress unused-variable warning
         }
+    }
+
+    /// <summary>
+    /// Pre-warms the VM discovery cache on startup so the first right-click menu open is
+    /// instant.  Calls <see cref="TrayMenu.RefreshState"/> once the cache is populated.
+    /// </summary>
+    private async Task PreWarmVmCacheAsync()
+    {
+        if (_hyperV is null || _menu is null) return;
+        try
+        {
+            await _hyperV.GetAllVmsAsync().ConfigureAwait(false);
+            // Cache is now populated — rebuild the menu on the UI thread so any previously
+            // shown "Loading VMs…" placeholder is replaced with the real VM list.
+            _ui.TryEnqueue(() => _menu.RefreshState());
+        }
+        catch { /* non-fatal — menu will retry on next right-click */ }
     }
 
     /// <summary>
