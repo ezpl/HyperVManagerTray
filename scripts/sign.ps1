@@ -19,8 +19,8 @@
     LenovoTray project. Running -Setup only once (on either project) is sufficient.
 
 .EXAMPLE
-    .\sign.ps1 -Setup          # one-time: create + trust the certificate
-    .\sign.ps1                 # sign the latest Release build
+    .\scripts\sign.ps1 -Setup          # one-time: create + trust the certificate
+    .\scripts\sign.ps1                 # sign the latest Release build
 #>
 [CmdletBinding()]
 param(
@@ -87,8 +87,10 @@ if ($Setup) {
 # ── Sign mode ───────────────────────────────────────────────────────────────
 
 # Default to the Release apphost when no path is supplied.
+# This script lives in scripts\, so the project root is one level up.
 if (-not $Path) {
-    $Path = Join-Path $PSScriptRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\HyperVManagerTray.exe"
+    $repoRoot = Split-Path $PSScriptRoot -Parent
+    $Path = Join-Path $repoRoot "bin\Release\net10.0-windows10.0.26100.0\win-x64\HyperVManagerTray.exe"
 }
 
 if (-not (Test-Path $Path)) {

@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: 0z00z0.HyperVManagerTray
+PackageVersion: 2.1.8
+PackageLocale: en-US
+Publisher: Zero Zero Software
+PublisherUrl: https://0z0.xyz
+PublisherSupportUrl: https://github.com/0z00z0/HyperVManagerTray/issues
+PackageName: Hyper-V Manager Tray
+PackageUrl: https://github.com/0z00z0/HyperVManagerTray
+License: MIT
+LicenseUrl: https://github.com/0z00z0/HyperVManagerTray/blob/master/LICENSE
+ShortDescription: System-tray app for Hyper-V VM network auto-switching and power control.
+Description: >-
+  A lightweight Windows system-tray app that automatically connects a Hyper-V VM to the
+  correct virtual switch based on the host's active network, and controls VM power state
+  (start, shutdown, pause, resume, save) plus a live dashboard from the tray. The app
+  requires administrator rights at runtime.
+Moniker: hypervmanagertray
+Tags:
+  - hyper-v
+  - virtualization
+  - vm
+  - network
+  - tray
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

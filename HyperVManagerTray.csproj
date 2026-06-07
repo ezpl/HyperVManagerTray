@@ -22,7 +22,7 @@
     <Product>Hyper-V Manager Tray</Product>
     <Description>System-tray app that auto-connects a Hyper-V VM to the right virtual switch and controls VMs from a dashboard.</Description>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Version>2.1.7</Version>
+    <Version>2.1.8</Version>
     <Authors>Zero Zero Software</Authors>
     <Company>Zero Zero Software</Company>
     <Copyright>Copyright © 2026 Zero Zero Software</Copyright>
@@ -81,13 +81,13 @@
     crashes at startup (stowed exception 0xC000027B). Copy it into the publish output.
   -->
   <!--
-    Code-sign the Release exe using sign.ps1 (same self-signed cert as LenovoTray).
-    Run .\sign.ps1 -Setup once on the dev machine to create + trust the certificate.
+    Code-sign the Release exe using scripts\sign.ps1 (same self-signed cert as LenovoTray).
+    Run .\scripts\sign.ps1 -Setup once on the dev machine to create + trust the certificate.
     ContinueOnError means a missing cert never breaks the build.
   -->
   <Target Name="SignOutput" AfterTargets="Build"
           Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot;"
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\scripts\sign.ps1&quot; -Path &quot;$(TargetDir)$(AssemblyName).exe&quot;"
           ContinueOnError="true" />
   </Target>
 

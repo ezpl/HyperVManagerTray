@@ -81,7 +81,7 @@ if (-not (Test-Path (Join-Path $publishDir "HyperVManagerTray.pri"))) {
 $publishedExe = Join-Path $publishDir "HyperVManagerTray.exe"
 if (Test-Path $publishedExe) {
     Write-Host "==> Signing published exe..." -ForegroundColor Cyan
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "sign.ps1") -Path $publishedExe
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\sign.ps1") -Path $publishedExe
 }
 
 # ── 3. Locate Inno Setup compiler ────────────────────────────────────────────
@@ -109,7 +109,7 @@ $setup = Join-Path $installerDir "Output\HyperVManagerTray-Setup.exe"
 # Sign before computing the SHA so the printed hash matches the distributed file.
 if (Test-Path $setup) {
     Write-Host "==> Signing installer..." -ForegroundColor Cyan
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "sign.ps1") -Path $setup
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "scripts\sign.ps1") -Path $setup
     # Non-fatal: sign.ps1 prints a warning and exits 0 if the cert is absent.
 }
 

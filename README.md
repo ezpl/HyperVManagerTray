@@ -51,8 +51,29 @@ dotnet run
 
 ### Install (recommended)
 
-A **per-user Inno Setup installer** builds from `installer\` (no admin needed to install — the
-app elevates itself at runtime):
+Via **winget** (per-user, no admin needed to install — the app elevates itself at runtime):
+
+```powershell
+winget install 0z00z0.HyperVManagerTray
+winget upgrade 0z00z0.HyperVManagerTray   # later, to update
+```
+
+Or download `HyperVManagerTray-Setup.exe` from the
+[latest release](https://github.com/0z00z0/HyperVManagerTray/releases/latest) and run it.
+
+The setup offers two optional tasks:
+
+- **Run at startup** — a `/RL HIGHEST` logon task (one UAC prompt, only if ticked) so the
+  elevated app auto-starts at sign-in with no boot-time prompt.
+- **Auto update in background** — a non-elevated logon task that runs `winget upgrade` 5 minutes
+  after each sign-in, so you stay on the latest published version automatically.
+
+It installs to `%LocalAppData%\Programs\HyperVManagerTray` and preserves any existing
+`config.json` on upgrade.
+
+### Build the installer from source
+
+A **per-user Inno Setup installer** builds from `installer\`:
 
 ```powershell
 # one-time, if Inno Setup is missing:
@@ -62,11 +83,12 @@ winget install JRSoftware.InnoSetup
 ```
 
 This publishes the app fully self-contained (.NET + Windows App SDK bundled, no runtime install
-needed on the target) and compiles `installer\Output\HyperVManagerTray-Setup.exe`. Run that
-to install to `%LocalAppData%\Programs\HyperVManagerTray`. The setup offers an optional
-**Run at startup** (a `/RL HIGHEST` logon task — one UAC prompt, only if ticked) and preserves
-any existing `config.json` on upgrade. See [`installer/README.md`](installer/README.md) for how
-the elevation is handled.
+needed on the target) and compiles `installer\Output\HyperVManagerTray-Setup.exe`. See
+[`installer/README.md`](installer/README.md) for how the elevation is handled.
+
+> **Releases** are automated: pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`,
+> which builds + signs the installer, patches the winget manifests, creates the GitHub Release,
+> and re-validates the published manifests.
 
 ### Publish manually (no installer)
 
