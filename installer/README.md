@@ -44,7 +44,7 @@ User config (`config.json`) is preserved across upgrades (installed `onlyifdoesn
 The Release build is automatically code-signed via the `SignOutput` MSBuild target in
 `HyperVManagerTray.csproj`. It calls `sign.ps1` after each Release build.
 
-The certificate is self-signed (`CN=Zero Zero Software`) — the same cert used by the sibling
+The certificate is self-signed (`CN=ZeroZero software`) — the same cert used by the sibling
 LenovoTray project. On a fresh dev machine, run `.\sign.ps1 -Setup` once to create it and
 register it as a trusted root + trusted publisher (eliminates "Unknown Publisher" on UAC prompts).
 

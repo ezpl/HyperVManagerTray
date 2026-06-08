@@ -1,7 +1,7 @@
 # Code signing
 
 Hyper-V Manager Tray is Authenticode-signed — both the application executable and the
-installer — with the publisher's certificate **`CN=Zero Zero Software`**.
+installer — with the publisher's certificate **`CN=ZeroZero software`**.
 
 ## What we do (and why it's as strong as a free cert allows)
 
@@ -64,7 +64,7 @@ the provider's action); the rest of the pipeline is unchanged.
 ```powershell
 # Export the local cert (with key) to a temp PFX, base64 it, push as repo secrets.
 $cert = Get-ChildItem Cert:\CurrentUser\My |
-  Where-Object { $_.Subject -eq 'CN=Zero Zero Software' -and
+  Where-Object { $_.Subject -eq 'CN=ZeroZero software' -and
                  $_.EnhancedKeyUsageList.ObjectId -contains '1.3.6.1.5.5.7.3.3' } |
   Sort-Object NotAfter -Descending | Select-Object -First 1
 $pw  = -join ((48..57)+(65..90)+(97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_})

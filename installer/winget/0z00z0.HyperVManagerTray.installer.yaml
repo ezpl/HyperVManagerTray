@@ -17,7 +17,7 @@ InstallerSwitches:
 # Lets `winget list` / `winget upgrade` match the per-user uninstall entry Inno registers.
 AppsAndFeaturesEntries:
   - DisplayName: Hyper-V Manager Tray
-    Publisher: Zero Zero Software
+    Publisher: ZeroZero software
     DisplayVersion: 2.1.8
     InstallerType: inno
 Installers:

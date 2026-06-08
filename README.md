@@ -72,7 +72,7 @@ It installs to `%LocalAppData%\Programs\HyperVManagerTray` and preserves any exi
 `config.json` on upgrade.
 
 > The app and installer are Authenticode-signed (SHA-256, timestamped) by
-> `CN=Zero Zero Software`. The certificate is self-signed, so first run may still show a
+> `CN=ZeroZero software`. The certificate is self-signed, so first run may still show a
 > SmartScreen / "Unknown Publisher" prompt — see [`docs/SIGNING.md`](docs/SIGNING.md) to verify
 > the signature or optionally trust the publisher.
 

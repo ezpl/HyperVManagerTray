@@ -23,9 +23,9 @@
     <Description>System-tray app that auto-connects a Hyper-V VM to the right virtual switch and controls VMs from a dashboard.</Description>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Version>2.1.8</Version>
-    <Authors>Zero Zero Software</Authors>
-    <Company>Zero Zero Software</Company>
-    <Copyright>Copyright © 2026 Zero Zero Software</Copyright>
+    <Authors>ZeroZero software</Authors>
+    <Company>ZeroZero software</Company>
+    <Copyright>Copyright © 2026 ZeroZero software</Copyright>
     <RepositoryUrl>https://github.com/0z00z0/HyperVManagerTray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
 
@@ -45,7 +45,7 @@
     <Content Include="config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- AppIcon.ico: Zero Zero Software brand icon — embedded in the exe PE resources
+    <!-- AppIcon.ico: ZeroZero software brand icon — embedded in the exe PE resources
          (ApplicationIcon), used as the installer wizard icon (SetupIconFile), and shipped
          next to the exe for the Start Menu shortcut (IconFilename). Sourced from the sibling
          LenovoTray project — same publisher, same icon. -->

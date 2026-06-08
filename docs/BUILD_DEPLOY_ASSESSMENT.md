@@ -38,7 +38,7 @@ manifests, and release automation. HyperVManagerTray is now **ahead** in these a
 | **Uninstall hygiene** | `[UninstallDelete]` removes runtime-generated icons (incl. legacy v1 names) | Not needed | Leaves no orphaned files behind. |
 | **Solution hygiene** | Dedicated `Tests/` project linking only the source files under test | — | Test isolation without bloating the app build. |
 
-Both still share: identical `sign.ps1` logic, the same self-signed `CN=Zero Zero Software`
+Both still share: identical `sign.ps1` logic, the same self-signed `CN=ZeroZero software`
 cert, the same per-user Inno model (`PrivilegesRequired=lowest`, `/RL HIGHEST` startup task,
 `CloseApplications=yes`/`RestartApplications=no`), and a near-identical `release.yml` shape.
 
