@@ -1,0 +1,38 @@
+name: CI
+
+# Build + unit tests on every push and PR to master. Keeps the release path
+# (release.yml) lean — this catches regressions continuously, not only at release.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore
+        run: dotnet restore HyperVManagerTray.sln
+
+      - name: Build (Release)
+        run: dotnet build HyperVManagerTray.csproj -c Release --no-restore --nologo
+
+      - name: Unit tests
+        run: dotnet test Tests\HyperVManagerTray.Tests.csproj -c Release --nologo

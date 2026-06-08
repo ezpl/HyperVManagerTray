@@ -106,35 +106,37 @@ and makes a third app nearly free to onboard.
 
 ## 4. Prioritized suggestions
 
+> **Status update (2026-06-08):** the signing and CI-hygiene findings below have been applied.
+> See `docs/SIGNING.md` for the signing details.
+
 ### High — required for real winget distribution
-1. **Replace the self-signed cert for distributed builds.** `CN=Zero Zero Software` is trusted
-   only on machines that imported it (i.e. the dev box). winget users on other machines will
-   hit **"Unknown Publisher" / SmartScreen** warnings. For public distribution use a real
-   OV/EV Authenticode certificate or **Azure Trusted Signing**. Wire its PFX/identity into the
-   `CODE_SIGN_PFX` + `CODE_SIGN_PASSWORD` secrets the new `release.yml` already consumes.
-2. **Add the CI signing secrets.** Until `CODE_SIGN_PFX`/`CODE_SIGN_PASSWORD` exist in the
-   repo, the CI-built installer ships **unsigned** (the sign step is skipped). Local builds are
-   fine because the dev cert is present. This is the one place CI is currently behind a local
-   build.
-3. **Decide the winget delivery channel.** In-repo manifests + release assets do **not** make
-   `winget install 0z00z0.HyperVManagerTray` work from the default public source — that
-   requires submitting the manifests to `microsoft/winget-pkgs` (e.g. via `wingetcreate`).
-   Either automate that PR in `release.yml`, or document that users install with
-   `winget install --manifest` / a custom source. Same caveat applies to LenovoPowerTray.
+1. ✅ **CI signing secrets added.** The local cert was exported to a password-protected PFX and
+   stored as `CODE_SIGN_PFX` / `CODE_SIGN_PASSWORD`, so tag-built CI releases are now signed
+   **identically to local builds**. Also fixed a latent bug where the sign step's `if:` read a
+   step-level env (always empty) → it would have skipped signing; secrets are now job-level.
+2. ✅ **Signing hardened as far as a free cert allows** — SHA-256 + RFC-3161 timestamp (survives
+   cert expiry), app exe signed before the installer is (re)compiled + signed, public cert
+   shipped (`scripts/ZeroZeroSoftware.cer`) so users/admins can opt into trust, honest docs in
+   `docs/SIGNING.md`. **Remaining (needs money or an OSS cert):** a publicly-*trusted* chain to
+   remove SmartScreen for everyone — best free path is **SignPath Foundation** (OSS), else
+   **Azure Trusted Signing** (~$10/mo) or an OV/EV CA cert. Any of these drops into the same
+   `CODE_SIGN_PFX` secret.
+3. ⏳ **winget delivery channel — documented, not auto-submitted.** In-repo manifests + release
+   assets don't make `winget install 0z00z0.HyperVManagerTray` work from the public source; that
+   needs a `microsoft/winget-pkgs` PR (`wingetcreate`). Their automated validation will flag a
+   self-signed installer, so public submission is deferred until the cert is publicly trusted
+   (item 2). Today: install via `winget install --manifest installer\winget`.
 
 ### Medium — quality & maintainability
-4. **Add a `ci.yml`** (build + 77 tests on every push/PR), separate from `release.yml`, so
-   regressions are caught continuously, not only at release time. Backport to Lenovo.
-5. **Add unit tests to LenovoPowerTray.** It currently has none; the HyperV `Tests/` project
-   is a good template (link-only source references, xUnit-style).
-6. **Extract the shared framework** per Section 3 (start with the reusable workflow +
-   `Directory.Build.props`).
-7. **Enable Dependabot** for NuGet + GitHub Actions in both repos.
+4. ✅ **Added `ci.yml`** — build + 77 tests on every push/PR to `master`.
+5. ⏳ **Add unit tests to LenovoPowerTray** (different repo; out of scope for this pass). The
+   HyperV `Tests/` project is the template.
+6. ⏳ **Extract the shared framework** per Section 3 — deferred (cross-repo effort).
+7. ✅ **Enabled Dependabot** for NuGet + GitHub Actions (`.github/dependabot.yml`).
 
 ### Low — cosmetic / nice-to-have
-8. Align the `LenovoPowerTray.iss` to reuse a shared `common.iss` once extracted.
-9. Add a SHA256 line and changelog template to the release body (HyperV release.yml already
-   emits the SHA).
+8. ⏳ Align `LenovoPowerTray.iss` to a shared `common.iss` once extracted.
+9. ✅ Release body already emits the installer SHA-256 (release.yml step 8 → step 11).
 
 ---
 

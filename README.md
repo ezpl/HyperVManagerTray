@@ -71,6 +71,11 @@ The setup offers two optional tasks:
 It installs to `%LocalAppData%\Programs\HyperVManagerTray` and preserves any existing
 `config.json` on upgrade.
 
+> The app and installer are Authenticode-signed (SHA-256, timestamped) by
+> `CN=Zero Zero Software`. The certificate is self-signed, so first run may still show a
+> SmartScreen / "Unknown Publisher" prompt — see [`docs/SIGNING.md`](docs/SIGNING.md) to verify
+> the signature or optionally trust the publisher.
+
 ### Build the installer from source
 
 A **per-user Inno Setup installer** builds from `installer\`:
