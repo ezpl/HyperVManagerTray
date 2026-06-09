@@ -4,7 +4,7 @@
 # Release asset, and fill InstallerSha256 (build-installer.ps1 prints the SHA256).
 # The release.yml workflow patches these fields automatically on a tagged release.
 PackageIdentifier: 0z00z0.HyperVManagerTray
-PackageVersion: 2.1.9
+PackageVersion: 2.1.10
 InstallerType: inno
 Scope: user
 InstallModes:
@@ -18,11 +18,11 @@ InstallerSwitches:
 AppsAndFeaturesEntries:
   - DisplayName: Hyper-V Manager Tray
     Publisher: ZeroZero Software
-    DisplayVersion: 2.1.9
+    DisplayVersion: 2.1.10
     InstallerType: inno
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/0z00z0/HyperVManagerTray/releases/download/v2.1.9/HyperVManagerTray-Setup.exe
-    InstallerSha256: 6977D60806C7769C99D2ABFF9EEE2FA3405BBD70FB7403196C657570914C161B
+    InstallerUrl: https://github.com/0z00z0/HyperVManagerTray/releases/download/v2.1.10/HyperVManagerTray-Setup.exe
+    InstallerSha256: 4F0AF9141807620E5AE8C4FAABD1BEBC915DBA60DF66904164DC8ED05448284F
 ManifestType: installer
 ManifestVersion: 1.6.0

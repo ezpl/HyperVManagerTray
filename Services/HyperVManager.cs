@@ -60,10 +60,10 @@ public sealed class HyperVManager : IDisposable
         else                              _logger.LogInformation("Switch applied: {Vm} → {Switch}", vmName, switchName);
     }
 
-    // The bind sequence toggles AllowManagementOS and re-homes the external adapter, which is
-    // slow (~25 s observed).  It gets a longer timeout than the default so it is not killed
-    // mid-sequence: a kill after '-AllowManagementOS $false' but before '$true' would leave the
-    // host adapter with no management vNIC (and therefore no IP) until the next successful bind.
+    // Re-homing an external switch's adapter is slow (~25 s observed), so this gets a longer
+    // timeout than the default. The bind is now done as a single atomic Set-VMSwitch call that
+    // never disables host sharing, so even a hard kill mid-sequence cannot leave the host
+    // without a management vNIC (the failure mode that previously disconnected the host).
     private static readonly TimeSpan BindTimeout = TimeSpan.FromSeconds(120);
 
     // Save-VM writes all assigned RAM to disk — can take several minutes for large VMs.
@@ -74,16 +74,22 @@ public sealed class HyperVManager : IDisposable
     /// Binds a Hyper-V virtual switch to a physical NIC (makes it External, with the host
     /// sharing the adapter) — but only when it isn't already in that exact state.
     ///
-    /// Host sharing is detached (<c>-AllowManagementOS $false</c>) <em>before</em> the external
-    /// adapter is changed, then re-enabled.  This forces Windows to remove the previous host
-    /// management vNIC instead of leaving it behind: rebinding a shared switch straight to a new
-    /// adapter orphans the old <c>vEthernet (&lt;switch&gt;)</c> NIC, and those accumulate across
-    /// rebinds — which locks the switch's settings and pollutes host routing with stale default
-    /// routes.  The two-step keeps exactly one management vNIC alive.
+    /// <para><b>Crash/kill safety.</b> The rebind is a single atomic <c>Set-VMSwitch
+    /// -NetAdapterName … -AllowManagementOS $true</c>. Host sharing is <em>never</em> disabled,
+    /// so there is no window in which a hard kill (process crash, timeout kill) could leave the
+    /// host adapter with no management vNIC and therefore no IP — the failure that previously
+    /// disconnected the host when the app crashed between a <c>$false</c> and <c>$true</c> toggle.</para>
     ///
-    /// That toggle briefly drops the host's vNIC, so it is guarded by a check: if the switch is
-    /// already External, sharing with the management OS, and bound to the target adapter, nothing
-    /// is done.  This stops the host network flickering on every launch / redundant evaluation.
+    /// <para><b>No-op fast path.</b> If the switch is already External, sharing with the management
+    /// OS, and bound to the target adapter, nothing is changed — this stops host-network flicker
+    /// on every launch / redundant evaluation.</para>
+    ///
+    /// <para><b>Self-heal.</b> Any duplicate/orphaned <c>vEthernet (&lt;switch&gt;)</c> management
+    /// vNICs left behind by older builds are collapsed back to a single one (without toggling
+    /// sharing, so no connectivity blip).</para>
+    ///
+    /// <para>If the target adapter isn't present (e.g. the USB NIC is unplugged / on a different
+    /// network), the switch is left untouched.</para>
     /// </summary>
     public async Task UpdateSwitchBindingAsync(string switchName, string adapterName)
     {
@@ -92,16 +98,22 @@ public sealed class HyperVManager : IDisposable
         var script =
             $"$want = (Get-NetAdapter -Name '{nic}' -ErrorAction SilentlyContinue).InterfaceDescription; " +
             $"$s = Get-VMSwitch -Name '{sw}' -ErrorAction SilentlyContinue; " +
-             "if ($s -and $s.SwitchType -eq 'External' -and $s.AllowManagementOS -and $want -and " +
-             "$s.NetAdapterInterfaceDescription -eq $want) { 'SKIP' } else { " +
-            $"Set-VMSwitch -Name '{sw}' -AllowManagementOS $false; " +
-            $"Set-VMSwitch -Name '{sw}' -NetAdapterName '{nic}' -AllowManagementOS $true; 'BOUND' }}";
+             "if (-not $want) { 'NOADAPTER' } elseif (-not $s) { 'NOSWITCH' } else { " +
+             "if ($s.SwitchType -eq 'External' -and $s.AllowManagementOS -and " +
+             "$s.NetAdapterInterfaceDescription -eq $want) { $r = 'SKIP' } else { " +
+            $"Set-VMSwitch -Name '{sw}' -NetAdapterName '{nic}' -AllowManagementOS $true; $r = 'BOUND' }} " +
+             // Collapse any orphaned/duplicate management vNICs to a single one (no sharing toggle).
+            $"$m = @(Get-VMNetworkAdapter -ManagementOS -SwitchName '{sw}'); " +
+             "if ($m.Count -gt 1) { $m | Select-Object -Skip 1 | Remove-VMNetworkAdapter -ErrorAction SilentlyContinue } " +
+             "$r }";
 
         var (ok, output) = await RunAsync(script, BindTimeout);
 
-        if (!ok)                          _logger.LogError("UpdateSwitchBindingAsync error: {Error}", output);
-        else if (output.Contains("SKIP")) _logger.LogInformation("Switch '{Switch}' already bound to '{Adapter}' — no rebind", switchName, adapterName);
-        else                              _logger.LogInformation("Switch '{Switch}' bound to '{Adapter}'", switchName, adapterName);
+        if (!ok)                                _logger.LogError("UpdateSwitchBindingAsync error: {Error}", output);
+        else if (output.Contains("NOADAPTER"))  _logger.LogInformation("Adapter '{Adapter}' not present — switch '{Switch}' left unchanged", adapterName, switchName);
+        else if (output.Contains("NOSWITCH"))   _logger.LogWarning("Virtual switch '{Switch}' not found — cannot bind", switchName);
+        else if (output.Contains("SKIP"))       _logger.LogInformation("Switch '{Switch}' already bound to '{Adapter}' — no rebind", switchName, adapterName);
+        else                                    _logger.LogInformation("Switch '{Switch}' bound to '{Adapter}'", switchName, adapterName);
     }
 
     /// <summary>

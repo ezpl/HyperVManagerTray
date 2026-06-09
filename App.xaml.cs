@@ -39,6 +39,11 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Capture *every* unhandled exception to disk first thing — a WinUI tray app that
+        // throws on the dispatcher thread otherwise dies silently (stowed exception in
+        // CoreMessagingXP.dll) and the tray icon just vanishes with nothing in the log.
+        RegisterGlobalExceptionHandlers();
+
         // Opt native Win32 elements (tray context menu, etc.) into system dark mode.
         // Must run before any UI is created so the menu HWND inherits the setting.
         NativeMethods.EnableDarkModeForNativeUi();
@@ -101,6 +106,51 @@ public partial class App : Application
         }
     }
 
+    // ── Global crash logging ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Wires the three process-wide exception sinks so a crash is never silent.
+    /// UI/XAML-thread exceptions are logged and marked handled (the tray survives);
+    /// background and unobserved-task exceptions are logged before the runtime acts.
+    /// </summary>
+    private void RegisterGlobalExceptionHandlers()
+    {
+        // UI/XAML dispatcher thread — keep the tray alive instead of a silent stowed-exception crash.
+        UnhandledException += (_, e) =>
+        {
+            LogCrash("UI/XAML UnhandledException", e.Exception);
+            e.Handled = true;
+        };
+
+        // Background / finalizer threads — can't stop termination, but log the stack first.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            LogCrash("AppDomain UnhandledException (fatal)", e.ExceptionObject as Exception);
+
+        // Faulted Tasks whose exception was never awaited/observed.
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogCrash("UnobservedTaskException", e.Exception);
+            e.SetObserved();
+        };
+    }
+
+    /// <summary>Appends a full exception dump to crash.log (and the normal log if available). Never throws.</summary>
+    private void LogCrash(string source, Exception? ex)
+    {
+        try { _loggerFactory?.CreateLogger("Crash").LogError(ex, "Unhandled exception ({Source})", source); }
+        catch { /* logging must never throw */ }
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HyperVManagerTray");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(
+                Path.Combine(dir, "crash.log"),
+                $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [CRASH] {source}: {ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch { /* never throw from the crash logger */ }
+    }
+
     // ── Tray icon ───────────────────────────────────────────────────────────────
 
     private void InitTrayIcon()
@@ -122,13 +172,17 @@ public partial class App : Application
     {
         _ui.TryEnqueue(() =>
         {
-            bool bridged = result.VirtualSwitch != _config!.Current.Fallback.VirtualSwitch;
-            if (bridged != _bridged)
+            try
             {
-                _bridged = bridged;
-                SetTrayIcon(bridged);
+                bool bridged = result.VirtualSwitch != _config!.Current.Fallback.VirtualSwitch;
+                if (bridged != _bridged)
+                {
+                    _bridged = bridged;
+                    SetTrayIcon(bridged);
+                }
+                _dashboard?.OnSwitchApplied(result);
             }
-            _dashboard?.OnSwitchApplied(result);
+            catch (Exception ex) { LogCrash("OnSwitchApplied UI update", ex); }
         });
 
         // Update tooltip with the new switch + fresh VM IPs (runs on thread-pool; posts to UI when done).
