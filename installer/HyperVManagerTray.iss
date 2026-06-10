@@ -71,11 +71,14 @@ Name: "autoupdate"; Description: "Auto update in background (checks for updates 
 
 ; Generated at runtime by the app — remove on uninstall so the folder can be cleaned up.
 [UninstallDelete]
-Type: files;      Name: "{app}\icon-bridged-v2.ico"
-Type: files;      Name: "{app}\icon-fallback-v2.ico"
+Type: files;      Name: "{app}\icon-unknown-v3.ico"
+Type: files;      Name: "{app}\icon-bridged-v3.ico"
+Type: files;      Name: "{app}\icon-fallback-v3.ico"
 Type: files;      Name: "{app}\AppIcon.ico"
 Type: files;      Name: "{app}\app.ico"
-; v1 names — clean up if upgrading from an older install
+; Legacy names — clean up if upgrading from an older install
+Type: files;      Name: "{app}\icon-bridged-v2.ico"
+Type: files;      Name: "{app}\icon-fallback-v2.ico"
 Type: files;      Name: "{app}\switch-blue.ico"
 Type: files;      Name: "{app}\switch-grey.ico"
 Type: dirifempty; Name: "{app}"
@@ -89,6 +92,47 @@ Type: dirifempty; Name: "{app}"
 const
   TaskName       = '{#TaskName}';
   UpdateTaskName = '{#TaskName} AutoUpdate';
+
+// ── .NET 10 Desktop Runtime prerequisite check ─────────────────────────────
+// The app is published framework-dependent and requires .NET 10 Desktop Runtime
+// (Microsoft.WindowsDesktop.App 10.x). Check the registry that dotnet writes on install.
+function IsDotNet10DesktopInstalled: Boolean;
+var
+  SubKeyNames: TArrayOfString;
+  I: Integer;
+  RootPath: string;
+begin
+  Result := False;
+  RootPath := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
+  if RegGetSubkeyNames(HKLM, RootPath, SubKeyNames) then
+    for I := 0 to GetArrayLength(SubKeyNames) - 1 do
+      if Copy(SubKeyNames[I], 1, 3) = '10.' then
+      begin
+        Result := True;
+        Exit;
+      end;
+end;
+
+function InitializeSetup: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if not IsDotNet10DesktopInstalled then
+  begin
+    if MsgBox(
+        '.NET 10 Desktop Runtime is required but was not found on this machine.'
+        + #13#10#13#10
+        + 'Click OK to open the download page, install ".NET 10 Desktop Runtime x64",'
+        + ' then run this installer again.'
+        + #13#10
+        + 'Click Cancel to abort.',
+        mbInformation, MB_OKCANCEL) = IDOK then
+      ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet/10.0',
+                '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+    Result := False;
+  end;
+end;
 
 function ScheduledTaskExists(): Boolean;
 var

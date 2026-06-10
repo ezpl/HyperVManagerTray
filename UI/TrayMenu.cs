@@ -469,18 +469,13 @@ internal sealed class TrayMenu
     private const string Publisher  = "ZeroZero Software";
     private const string RepoUrl    = "https://github.com/0z00z0/HyperVManagerTray";
 
-    private static void ShowAbout()
+    private void ShowAbout()
     {
-        var version = System.Reflection.Assembly.GetExecutingAssembly()
-                          .GetName().Version?.ToString(3) ?? "—";
-        bool openGitHub = NativeMethods.Confirm(
-            $"{AppName}\nVersion {version}\n\n" +
-            $"Publisher:  {Publisher}\n" +
-            $"License:    MIT\n\n" +
-            $"Open the GitHub page?",
-            $"About {AppName}");
-        if (openGitHub)
-            Process.Start(new ProcessStartInfo(RepoUrl) { UseShellExecute = true });
+        _ui.TryEnqueue(() =>
+        {
+            var about = new AboutWindow(_updateChecker);
+            about.Activate();
+        });
     }
 
     private void Add(string text, Action action)

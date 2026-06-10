@@ -61,11 +61,14 @@ if (-not (Test-Path $appIco)) {
     if ($LASTEXITCODE -ne 0) { throw "Generate-AppIcon.ps1 failed ($LASTEXITCODE)." }
 }
 
-# ── 2. Publish the app (fully self-contained, no trim) ───────────────────────
-Write-Host "==> Publishing app (self-contained win-x64, Windows App SDK bundled)..." -ForegroundColor Cyan
+# ── 2. Publish the app (framework-dependent, Windows App SDK bundled) ────────
+# Uses an installed .NET 10 Desktop Runtime instead of bundling it, keeping the
+# installer small. Windows App SDK is still self-contained (uncommon dependency).
+# H.NotifyIcon.WinUI and System.Drawing.Common ship as DLLs next to the exe.
+Write-Host "==> Publishing app (framework-dependent win-x64, Windows App SDK bundled)..." -ForegroundColor Cyan
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 dotnet publish $proj `
-    -c Release -r win-x64 --self-contained true `
+    -c Release -r win-x64 --self-contained false `
     -p:WindowsAppSDKSelfContained=true -p:PublishTrimmed=false -p:PublishReadyToRun=true `
     -o $publishDir
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
@@ -99,6 +102,15 @@ if (-not $iscc) {
 }
 
 # ── 4. Compile the installer ─────────────────────────────────────────────────
+# Remove any previous installers from Output/ so only the current build ships.
+$outputDir = Join-Path $installerDir "Output"
+if (Test-Path $outputDir) {
+    $old = Get-ChildItem $outputDir -Filter "HyperVManagerTray-Setup-*.exe" -File -ErrorAction SilentlyContinue
+    foreach ($f in $old) {
+        Remove-Item $f.FullName -Force
+        Write-Host "    Removed old installer: $($f.Name)" -ForegroundColor DarkGray
+    }
+}
 Write-Host "==> Compiling installer with $iscc ..." -ForegroundColor Cyan
 & $iscc "/DAppVersion=$Version" "/DPublishDir=$publishDir" $iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed ($LASTEXITCODE)." }
