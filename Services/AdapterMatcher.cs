@@ -241,11 +241,14 @@ public static class AdapterMatcher
         }
         catch { /* fall through to heuristic */ }
 
-        // Heuristic fallback: prefer adapters with a default gateway, then pick the fastest.
+        // Heuristic fallback: prefer adapters with a default gateway, then wired over wireless,
+        // then pick the fastest.  Wi-Fi 6E can report a higher Speed than Gigabit Ethernet, so
+        // Speed alone would incorrectly prefer wireless when both share the same subnet.
         return physicalAdapters
             .Where(n => n.GetIPProperties().GatewayAddresses
                 .Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork))
-            .OrderByDescending(n => n.Speed)
+            .OrderBy(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? 1 : 0)
+            .ThenByDescending(n => n.Speed)
             .FirstOrDefault()
             ?? physicalAdapters.FirstOrDefault();
     }

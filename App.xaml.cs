@@ -32,7 +32,7 @@ public partial class App : Application
     private TrayMenu?        _menu;
 
     private string _exeDir = AppContext.BaseDirectory;
-    private bool   _bridged;
+    private bool?  _bridged;  // null = icon not yet initialized; ensures first switch always updates
     private System.Drawing.Icon? _iconImage;
 
     public App() => InitializeComponent();
@@ -160,7 +160,7 @@ public partial class App : Application
     private void InitTrayIcon()
     {
         _trayIcon = (TaskbarIcon)Resources["TrayIcon"];
-        SetTrayIcon(bridged: false);
+        SetTrayIcon(null);  // grey = unknown until first SwitchApplied fires
 
         _menu = new TrayMenu(_config!, _monitor!, _hyperV!, _startup, _updateChecker!, OnExit);
         _trayIcon.ContextFlyout     = _menu.Flyout;
@@ -296,11 +296,17 @@ public partial class App : Application
     private static string TruncateLine(string line, int maxLen) =>
         line.Length <= maxLen ? line : line[..(maxLen - 1)] + "…";
 
-    /// <summary>Swaps the tray icon (blue = bridged, grey = fallback), disposing the previous one.</summary>
-    private void SetTrayIcon(bool bridged)
+    /// <summary>Swaps the tray icon based on network state, disposing the previous one.</summary>
+    private void SetTrayIcon(bool? bridged)
     {
+        var state = bridged switch
+        {
+            true  => TrayIconState.Bridged,
+            false => TrayIconState.Fallback,
+            null  => TrayIconState.Unknown,
+        };
         var previous = _iconImage;
-        _iconImage = new System.Drawing.Icon(IconGenerator.GenerateAndSave(_exeDir, bridged));
+        _iconImage = new System.Drawing.Icon(IconGenerator.GenerateAndSave(_exeDir, state));
         _trayIcon!.Icon = _iconImage;
         previous?.Dispose();
     }

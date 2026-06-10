@@ -118,6 +118,9 @@ public sealed partial class DashboardWindow : Window
     {
         var result = _monitor.LastApplied ?? AdapterMatcher.Evaluate(_config.Current);
         ApplyHostStatus(result);
+        // Show VM cards immediately with "Updating" state so the section isn't empty on open.
+        // LoadVmsAsync (triggered by OnActivated) will replace these with real data.
+        BuildCards(Array.Empty<VmStatus>());
     }
 
     private void ApplyHostStatus(MatchResult result)
@@ -394,7 +397,7 @@ public sealed partial class DashboardWindow : Window
     /// </summary>
     private static string FormatState(VmStatus? s)
     {
-        var state = s?.State ?? "Unknown";
+        var state = s?.State ?? "Updating";
         if (s is null) return state;
 
         var desc = s.StatusDesc ?? "";
