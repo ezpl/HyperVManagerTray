@@ -123,12 +123,11 @@ begin
     if MsgBox(
         '.NET 10 Desktop Runtime is required but was not found on this machine.'
         + #13#10#13#10
-        + 'Click OK to open the download page, install ".NET 10 Desktop Runtime x64",'
-        + ' then run this installer again.'
+        + 'Click OK to download and install it now, then run this installer again.'
         + #13#10
         + 'Click Cancel to abort.',
         mbInformation, MB_OKCANCEL) = IDOK then
-      ShellExec('open', 'https://dotnet.microsoft.com/download/dotnet/10.0',
+      ShellExec('open', 'https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe',
                 '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
     Result := False;
   end;
