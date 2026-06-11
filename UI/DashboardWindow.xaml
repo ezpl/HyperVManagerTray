@@ -56,15 +56,18 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Adapter" Style="{StaticResource RowLabelStyle}"/>
-                        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="AdapterText" Text="—" Style="{StaticResource RowValueStyle}"/>
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="IP"      Style="{StaticResource RowLabelStyle}"/>
-                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="IpText"      Text="—" Style="{StaticResource RowValueStyle}"/>
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Gateway" Style="{StaticResource RowLabelStyle}"/>
-                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="GatewayText" Text="—" Style="{StaticResource RowValueStyle}"/>
-                        <TextBlock Grid.Row="3" Grid.Column="0" Text="DNS"     Style="{StaticResource RowLabelStyle}"/>
-                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="DnsText"     Text="—" Style="{StaticResource RowValueStyle}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Rule"    Style="{StaticResource RowLabelStyle}"/>
+                        <TextBlock Grid.Row="0" Grid.Column="1" x:Name="RuleText"    Text="—" Style="{StaticResource RowValueStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Adapter" Style="{StaticResource RowLabelStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AdapterText" Text="—" Style="{StaticResource RowValueStyle}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="IP"      Style="{StaticResource RowLabelStyle}"/>
+                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="IpText"      Text="—" Style="{StaticResource RowValueStyle}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Gateway" Style="{StaticResource RowLabelStyle}"/>
+                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="GatewayText" Text="—" Style="{StaticResource RowValueStyle}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="DNS"     Style="{StaticResource RowLabelStyle}"/>
+                        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="DnsText"     Text="—" Style="{StaticResource RowValueStyle}"/>
                     </Grid>
                 </Border>
             </StackPanel>

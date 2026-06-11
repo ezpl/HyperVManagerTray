@@ -86,12 +86,22 @@ public sealed class NetworkMonitor : IDisposable
                 var result = AdapterMatcher.Evaluate(_config.Current);
                 _logger.LogInformation("Evaluated: rule='{Rule}' switch='{Switch}'", result.RuleName, result.VirtualSwitch);
 
-                bool unchanged = _lastApplied?.VirtualSwitch == result.VirtualSwitch &&
-                                 _lastApplied?.TargetVms.SequenceEqual(result.TargetVms) == true;
-                if (unchanged)
+                bool switchUnchanged = _lastApplied?.VirtualSwitch == result.VirtualSwitch &&
+                                       _lastApplied?.TargetVms.SequenceEqual(result.TargetVms) == true;
+                if (switchUnchanged)
+                {
+                    // Same Hyper-V switch — skip rebind to avoid a VM network drop. But the
+                    // host adapter/IP/gateway may have changed (e.g. two different mobile
+                    // networks both resolving to Fallback), so still update _lastApplied and
+                    // fire SwitchApplied so the dashboard reflects the current network.
                     _logger.LogDebug("No switch change needed");
+                    _lastApplied = result;
+                    SwitchApplied?.Invoke(this, result);
+                }
                 else
+                {
                     await ApplyAsync(result);
+                }
             }
             while (_evaluatePending);
         }

@@ -125,6 +125,7 @@ public sealed partial class DashboardWindow : Window
 
     private void ApplyHostStatus(MatchResult result)
     {
+        RuleText.Text    = result.RuleName;
         AdapterText.Text = result.HostAdapterName;
         IpText.Text      = result.HostIp;
         GatewayText.Text = result.Gateway;
