@@ -66,11 +66,12 @@ if (-not (Test-Path $appIco)) {
 # installer small. Windows App SDK is still self-contained (uncommon dependency).
 # H.NotifyIcon.WinUI and System.Drawing.Common ship as DLLs next to the exe.
 Write-Host "==> Publishing app (framework-dependent win-x64, Windows App SDK bundled)..." -ForegroundColor Cyan
+Write-Host "    (ReadyToRun compilation may take several minutes — this is normal)" -ForegroundColor DarkGray
 if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
 dotnet publish $proj `
     -c Release -r win-x64 --self-contained false `
     -p:WindowsAppSDKSelfContained=true -p:PublishTrimmed=false -p:PublishReadyToRun=true `
-    -o $publishDir
+    -o $publishDir -v minimal
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
 
 if (-not (Test-Path (Join-Path $publishDir "HyperVManagerTray.pri"))) {
