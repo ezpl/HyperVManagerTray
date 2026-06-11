@@ -340,10 +340,13 @@ internal sealed class TrayMenu
 
     private async Task CheckForUpdatesAsync()
     {
-        // Capture the foreground window before awaiting so the TaskDialog has a parent
-        // even when the continuation runs on a thread-pool thread (ConfigureAwait false).
+        // Capture the foreground HWND now (tray flyout is open) so ShowUpdateDialog has a
+        // parent even if the flyout is dismissed by the time the HTTP check completes.
+        // Do NOT use ConfigureAwait(false) here: TaskDialogIndirect requires comctl32 v6
+        // (activated via the app manifest's SxS context), and thread-pool threads do not
+        // inherit that context — calling it there throws EntryPointNotFoundException.
         var hwnd    = NativeMethods.CaptureHwnd();
-        var result  = await _updateChecker.CheckAsync().ConfigureAwait(false);
+        var result  = await _updateChecker.CheckAsync();
         var running = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
 
         if (result.UpdateAvailable)
@@ -351,8 +354,8 @@ internal sealed class TrayMenu
             bool canDownload = !string.IsNullOrEmpty(result.InstallerUrl);
 
             // Win32 TaskDialog — 3 custom buttons (Update / Releases page / Cancel) +
-            // expandable release notes section.  Blocks until the user responds; safe
-            // to call from any thread without needing a WinUI XamlRoot.
+            // expandable release notes section.  TaskDialogIndirect runs its own message
+            // pump so blocking the UI thread here is safe for a modal dialog.
             var action = NativeMethods.ShowUpdateDialog(
                 result.LatestVersion, running,
                 result.ReleaseNotes,  AppName,

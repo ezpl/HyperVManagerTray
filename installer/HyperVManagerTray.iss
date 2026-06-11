@@ -97,28 +97,45 @@ const
 // The app is published framework-dependent and requires .NET 10 Desktop Runtime
 // (Microsoft.WindowsDesktop.App 10.x).
 //
-// DETECTION — Microsoft's recommended method (two-level with filesystem fallback):
+// DETECTION — four-level check from most to least reliable:
 //
-// Primary: HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App\{version}
-//   In a 32-bit Inno Setup process, HKLM reads the WOW6432Node hive, which is
-//   also where the .NET installer writes the 32-bit-accessible view of these keys.
-//   HKLM64 accesses the native 64-bit view.  Both are checked for compatibility.
+// Primary (CLI): `dotnet --list-runtimes` is the most reliable method because it
+//   works regardless of how .NET was installed (winget, offline bundle, xcopy, etc.)
+//   and does not depend on any registry key being written.
 //   Source: https://learn.microsoft.com/en-us/dotnet/core/install/how-to-detect-installed-versions
 //
-// Fallback: filesystem check via the dotnet install path from HKLM64\sharedhost\Path.
-//   On some machines (e.g. windowsdesktop-runtime bundle installs) the sharedfx
-//   subkeys are not written.  The runtime payload directory is always present.
+// Fallback A/B (registry): HKLM sharedfx subkeys — present after most installers.
+//   On some machines only the HKLM64 view is written; both are checked.
+//
+// Fallback C (filesystem): runtime payload directory via sharedhost\Path.
+//   Handles machines where dotnet is not on PATH and the sharedfx keys are absent.
 function IsDotNet10DesktopInstalled: Boolean;
 var
-  SubKeyNames: TArrayOfString;
+  TempFile, SharedfxPath, DotNetPath: string;
+  Lines, SubKeyNames: TArrayOfString;
   I: Integer;
-  SharedfxPath, DotNetPath: string;
+  ResultCode: Integer;
   FindRec: TFindRec;
 begin
   Result := False;
+
+  // Primary: dotnet CLI — reliable for all install methods.
+  // Output lines look like: "Microsoft.WindowsDesktop.App 10.0.5 [C:\Program Files\dotnet\...]"
+  TempFile := ExpandConstant('{tmp}\dotnet-runtimes.txt');
+  if Exec(ExpandConstant('{cmd}'),
+      '/C dotnet --list-runtimes > "' + TempFile + '" 2>nul',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    if LoadStringsFromFile(TempFile, Lines) then
+      for I := 0 to GetArrayLength(Lines) - 1 do
+        if Pos('Microsoft.WindowsDesktop.App 10.', Lines[I]) > 0 then
+        begin
+          Result := True;
+          Exit;
+        end;
+
   SharedfxPath := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
 
-  // Check 1: 32-bit registry view (WOW6432Node — what HKLM gives a 32-bit process)
+  // Fallback A: 32-bit registry view (WOW6432Node — what HKLM gives a 32-bit process)
   if RegGetSubkeyNames(HKLM, SharedfxPath, SubKeyNames) then
     for I := 0 to GetArrayLength(SubKeyNames) - 1 do
       if Copy(SubKeyNames[I], 1, 3) = '10.' then
@@ -127,7 +144,7 @@ begin
         Exit;
       end;
 
-  // Check 2: 64-bit registry view (native hive via HKLM64)
+  // Fallback B: 64-bit registry view (native hive via HKLM64)
   if RegGetSubkeyNames(HKLM64, SharedfxPath, SubKeyNames) then
     for I := 0 to GetArrayLength(SubKeyNames) - 1 do
       if Copy(SubKeyNames[I], 1, 3) = '10.' then
@@ -136,9 +153,7 @@ begin
         Exit;
       end;
 
-  // Check 3: filesystem fallback — runtime payload directory under the dotnet root.
-  // Read the install path from the registry; fall back to the default Program Files
-  // location so non-standard installs are still detected.
+  // Fallback C: filesystem — runtime payload directory under the dotnet root.
   if not RegQueryStringValue(HKLM64,
       'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost',
       'Path', DotNetPath) then
@@ -307,17 +322,11 @@ begin
     // prompt the app needs (a [Run]/CreateProcess launch would just fail here).
     ShellExec('open', ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 
-  // Give the app a moment to elevate and initialise, then verify it is running.
-  // If the user dismissed the UAC prompt the app will not appear — that is not an
-  // error, but we still show the note so they know how to launch it manually.
-  Sleep(3000);
-  if not AppIsRunning() then
-    MsgBox('Hyper-V Manager Tray was installed but did not start automatically.'
-           + #13#10#13#10
-           + 'You can launch it from the Start Menu at any time.'
-           + #13#10
-           + 'The app requires administrator privileges — Windows will prompt once on first launch.',
-           mbInformation, MB_OK);
+  // The app requires UAC elevation at launch — the user must approve the prompt
+  // that appears after the installer finishes.  If they dismiss it or it times out,
+  // the app is simply not running; they can launch it from the Start Menu later.
+  // Do NOT check AppIsRunning here: the check would fire before UAC is approved,
+  // falsely reporting that the app "did not start" and confusing the user.
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
