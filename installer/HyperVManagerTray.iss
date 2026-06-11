@@ -99,19 +99,18 @@ const
 //
 // DETECTION — four-level check from most to least reliable:
 //
-// Primary (CLI): `dotnet --list-runtimes` is the most reliable method because it
-//   works regardless of how .NET was installed (winget, offline bundle, xcopy, etc.)
-//   and does not depend on any registry key being written.
+// Primary (CLI): run dotnet.exe by absolute path (avoids PATH lookup ambiguity in
+//   the 32-bit Inno Setup process) and parse `--list-runtimes` output.
 //   Source: https://learn.microsoft.com/en-us/dotnet/core/install/how-to-detect-installed-versions
 //
 // Fallback A/B (registry): HKLM sharedfx subkeys — present after most installers.
 //   On some machines only the HKLM64 view is written; both are checked.
 //
-// Fallback C (filesystem): runtime payload directory via sharedhost\Path.
-//   Handles machines where dotnet is not on PATH and the sharedfx keys are absent.
+// Fallback C (filesystem): version directory under the runtime payload path.
+//   The directory is always present; independent of any registry key.
 function IsDotNet10DesktopInstalled: Boolean;
 var
-  TempFile, SharedfxPath, DotNetPath: string;
+  TempFile, SharedfxPath, DotNetPath, DotNetExe: string;
   Lines, SubKeyNames: TArrayOfString;
   I: Integer;
   ResultCode: Integer;
@@ -119,19 +118,21 @@ var
 begin
   Result := False;
 
-  // Primary: dotnet CLI — reliable for all install methods.
-  // Output lines look like: "Microsoft.WindowsDesktop.App 10.0.5 [C:\Program Files\dotnet\...]"
-  TempFile := ExpandConstant('{tmp}\dotnet-runtimes.txt');
-  if Exec(ExpandConstant('{cmd}'),
-      '/C dotnet --list-runtimes > "' + TempFile + '" 2>nul',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    if LoadStringsFromFile(TempFile, Lines) then
-      for I := 0 to GetArrayLength(Lines) - 1 do
-        if Pos('Microsoft.WindowsDesktop.App 10.', Lines[I]) > 0 then
-        begin
-          Result := True;
-          Exit;
-        end;
+  // Primary: invoke dotnet.exe by absolute path so the check is independent of
+  // the installer process's PATH.  Output: "Microsoft.WindowsDesktop.App 10.x.y [path]"
+  DotNetExe := ExpandConstant('{pf64}') + '\dotnet\dotnet.exe';
+  TempFile  := ExpandConstant('{tmp}\dotnet-runtimes.txt');
+  if FileExists(DotNetExe) then
+    if Exec(ExpandConstant('{cmd}'),
+        '/C "' + DotNetExe + '" --list-runtimes > "' + TempFile + '" 2>nul',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      if LoadStringsFromFile(TempFile, Lines) then
+        for I := 0 to GetArrayLength(Lines) - 1 do
+          if Pos('Microsoft.WindowsDesktop.App 10.', Lines[I]) > 0 then
+          begin
+            Result := True;
+            Exit;
+          end;
 
   SharedfxPath := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
 
@@ -153,7 +154,8 @@ begin
         Exit;
       end;
 
-  // Fallback C: filesystem — runtime payload directory under the dotnet root.
+  // Fallback C: filesystem — look for a version directory (10.x.y) under the
+  // runtime payload folder.  Works even if dotnet.exe is not at {pf64}\dotnet.
   if not RegQueryStringValue(HKLM64,
       'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost',
       'Path', DotNetPath) then
@@ -163,7 +165,13 @@ begin
   if FindFirst(DotNetPath + 'shared\Microsoft.WindowsDesktop.App\10.*', FindRec) then
   begin
     FindClose(FindRec);
-    Result := True;
+    // FindFirst matches both files and directories; runtime versions are directories.
+    // FILE_ATTRIBUTE_DIRECTORY = $10 (16).
+    if (FindRec.Attributes and $10) <> 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
   end;
 end;
 
@@ -180,17 +188,17 @@ begin
   Result := True;
   if IsDotNet10DesktopInstalled then Exit;
 
+  // Detection may give a false negative on some machines.
+  // OK  → install .NET automatically
+  // Cancel → skip this step and continue (user says .NET is already present)
   if MsgBox(
-      '.NET 10 Desktop Runtime is required but was not found on this machine.'
+      '.NET 10 Desktop Runtime was not detected on this machine.'
       + #13#10#13#10
       + 'Click OK to install it automatically (requires internet access).'
       + #13#10
-      + 'Click Cancel to abort.',
+      + 'Click Cancel to skip if .NET 10 is already installed.',
       mbInformation, MB_OKCANCEL) <> IDOK then
-  begin
-    Result := False;
-    Exit;
-  end;
+    Exit;  // Skip .NET install; continue with app installation
 
   // Preferred path: Windows Package Manager (winget).
   // winget handles the download and installation silently — no explicit download
