@@ -306,6 +306,18 @@ begin
     // No task -> launch via the shell so requireAdministrator triggers the single UAC
     // prompt the app needs (a [Run]/CreateProcess launch would just fail here).
     ShellExec('open', ExpandConstant('{app}\{#AppExe}'), '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+
+  // Give the app a moment to elevate and initialise, then verify it is running.
+  // If the user dismissed the UAC prompt the app will not appear — that is not an
+  // error, but we still show the note so they know how to launch it manually.
+  Sleep(3000);
+  if not AppIsRunning() then
+    MsgBox('Hyper-V Manager Tray was installed but did not start automatically.'
+           + #13#10#13#10
+           + 'You can launch it from the Start Menu at any time.'
+           + #13#10
+           + 'The app requires administrator privileges — Windows will prompt once on first launch.',
+           mbInformation, MB_OK);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

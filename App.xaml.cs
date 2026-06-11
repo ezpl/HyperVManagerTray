@@ -126,9 +126,17 @@ public partial class App : Application
             e.Handled = true;
         };
 
-        // Background / finalizer threads — can't stop termination, but log the stack first.
+        // Background / finalizer threads — can't stop termination, but log and notify the user.
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            LogCrash("AppDomain UnhandledException (fatal)", e.ExceptionObject as Exception);
+        {
+            var ex = e.ExceptionObject as Exception;
+            LogCrash("AppDomain UnhandledException (fatal)", ex);
+            NativeMethods.Error(
+                $"Hyper-V Manager Tray crashed and needs to close.\n\n" +
+                $"{ex?.Message ?? "Unknown error"}\n\n" +
+                $"Details written to crash.log in %AppData%\\HyperVManagerTray.",
+                "Hyper-V Manager Tray");
+        };
 
         // Faulted Tasks whose exception was never awaited/observed.
         TaskScheduler.UnobservedTaskException += (_, e) =>
