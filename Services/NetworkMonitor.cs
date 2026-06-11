@@ -25,8 +25,9 @@ public sealed class NetworkMonitor : IDisposable
     private string? _lastBoundAdapterInterface;
 
     // Per-VM cancellation tokens for the bridge-lost delay timers.
-    // Accessed under _evalLock so no separate lock is needed here; Dispose() calls
-    // CancelDisconnectActions() before releasing _evalLock on shutdown.
+    // Protected by _disconnectLock (not _evalLock) so Dispose() can safely cancel pending
+    // actions while an evaluation is still in flight without deadlocking on the semaphore.
+    private readonly object _disconnectLock = new();
     private readonly Dictionary<string, CancellationTokenSource> _pendingDisconnect = new();
 
     /// <summary>Raised after a switch change has been applied (used to update the tray UI).</summary>
@@ -94,7 +95,11 @@ public sealed class NetworkMonitor : IDisposable
                     // host adapter/IP/gateway may have changed (e.g. two different mobile
                     // networks both resolving to Fallback), so still update _lastApplied and
                     // fire SwitchApplied so the dashboard reflects the current network.
+                    // Also run bridge-transition detection: an adapter change that keeps the
+                    // same switch might cross a bridge-lost or bridge-restored boundary and
+                    // needs to schedule or cancel the per-VM disconnect actions.
                     _logger.LogDebug("No switch change needed");
+                    HandleBridgeTransition(_lastApplied?.RuleName, result);
                     _lastApplied = result;
                     SwitchApplied?.Invoke(this, result);
                 }
@@ -118,6 +123,11 @@ public sealed class NetworkMonitor : IDisposable
     /// <summary>Re-evaluates rules and applies the result immediately, bypassing the "no change" check.</summary>
     public async Task ForceEvaluateAsync()
     {
+        bool acquired;
+        try { acquired = await _evalLock.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (ObjectDisposedException) { return; }
+        if (!acquired) return;
+
         try
         {
             var result = AdapterMatcher.Evaluate(_config.Current);
@@ -126,6 +136,10 @@ public sealed class NetworkMonitor : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during forced evaluation");
+        }
+        finally
+        {
+            _evalLock.Release();
         }
     }
 
@@ -147,8 +161,8 @@ public sealed class NetworkMonitor : IDisposable
 
     private async Task ApplyAsync(MatchResult result)
     {
-        // Capture the previously-active rule so autostart fires only on a rule *transition*,
-        // not on every (debounced) re-evaluation of the same network.
+        // Capture the previously-active rule before any state changes so autostart and
+        // bridge-transition detection both see a consistent before/after snapshot.
         var previousRule = _lastApplied?.RuleName;
 
         // When a specific rule matched, re-bind the Hyper-V virtual switch to the detected
@@ -197,9 +211,21 @@ public sealed class NetworkMonitor : IDisposable
             }
         }
 
-        // Bridge-lost / bridge-restored: manage per-VM delayed shutdown/pause/save actions.
-        // previousRule == null means this is the very first evaluation (app just started) —
-        // we never trigger disconnect actions on startup even if the result is Fallback.
+        HandleBridgeTransition(previousRule, result);
+
+        _lastApplied = result;
+        SwitchApplied?.Invoke(this, result);
+    }
+
+    // ── Bridge-lost / bridge-restored transition ────────────────────────────────
+
+    // Called from both the switchUnchanged fast path and ApplyAsync (full path) so that
+    // disconnect actions are scheduled or cancelled regardless of whether the Hyper-V
+    // switch binding itself needed to change.
+    private void HandleBridgeTransition(string? previousRule, MatchResult result)
+    {
+        // previousRule == null means first evaluation at startup — never trigger on startup
+        // even if the initial result is Fallback.
         bool bridgeJustLost     = previousRule != null
                                && previousRule != "Fallback"
                                && result.RuleName == "Fallback";
@@ -210,75 +236,86 @@ public sealed class NetworkMonitor : IDisposable
             ScheduleDisconnectActions();
         else if (bridgeJustRestored)
             CancelDisconnectActions();
-
-        _lastApplied = result;
-        SwitchApplied?.Invoke(this, result);
     }
 
     // ── Bridge-lost delayed actions ─────────────────────────────────────────────
 
     private void ScheduleDisconnectActions()
     {
-        foreach (var vm in _config.Current.VirtualMachines)
+        lock (_disconnectLock)
         {
-            var action = vm.OnBridgeLostAction;
-            if (string.IsNullOrEmpty(action) || action == "none") continue;
-
-            // Cancel any existing timer for this VM (bridge may have flapped).
-            if (_pendingDisconnect.TryGetValue(vm.Name, out var existing))
+            foreach (var vm in _config.Current.VirtualMachines)
             {
-                existing.Cancel();
-                existing.Dispose();
-            }
+                var action = vm.OnBridgeLostAction;
+                if (string.IsNullOrEmpty(action) || action == "none") continue;
 
-            var cts       = new CancellationTokenSource();
-            var vmName    = vm.Name;
-            var delaySec  = vm.OnBridgeLostDelaySeconds > 0 ? vm.OnBridgeLostDelaySeconds : 30;
-            _pendingDisconnect[vmName] = cts;
-
-            _logger.LogInformation(
-                "Bridge lost — scheduling '{Action}' for {Vm} in {Delay}s",
-                action, vmName, delaySec);
-
-            _ = Task.Run(async () =>
-            {
-                try
+                // Cancel any existing timer for this VM (bridge may have flapped).
+                if (_pendingDisconnect.TryGetValue(vm.Name, out var existing))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(delaySec), cts.Token);
+                    existing.Cancel();
+                    existing.Dispose();
+                }
 
-                    // Still on fallback? If the bridge was restored the action was cancelled above.
-                    if (_lastApplied?.RuleName != "Fallback") return;
+                var cts      = new CancellationTokenSource();
+                var vmName   = vm.Name;
+                var delaySec = vm.OnBridgeLostDelaySeconds > 0 ? vm.OnBridgeLostDelaySeconds : 30;
+                _pendingDisconnect[vmName] = cts;
 
-                    _logger.LogInformation(
-                        "Bridge-lost action: {Action} {Vm} (bridge absent for {Delay}s)",
-                        action, vmName, delaySec);
+                _logger.LogInformation(
+                    "Bridge lost — scheduling '{Action}' for {Vm} in {Delay}s",
+                    action, vmName, delaySec);
 
-                    await (action switch
+                _ = Task.Run(async () =>
+                {
+                    try
                     {
-                        "pause"    => _hyperV.SuspendVmAsync(vmName),
-                        "save"     => _hyperV.SaveVmAsync(vmName),
-                        "shutdown" => _hyperV.ShutdownVmAsync(vmName),
-                        _          => Task.CompletedTask,
-                    });
-                }
-                catch (OperationCanceledException) { /* bridge restored — expected */ }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Bridge-lost action failed for {Vm}", vmName);
-                }
-            }, CancellationToken.None);
+                        await Task.Delay(TimeSpan.FromSeconds(delaySec), cts.Token);
+
+                        _logger.LogInformation(
+                            "Bridge-lost action: {Action} {Vm} (bridge absent for {Delay}s)",
+                            action, vmName, delaySec);
+
+                        await (action switch
+                        {
+                            "pause"    => _hyperV.SuspendVmAsync(vmName),
+                            "save"     => _hyperV.SaveVmAsync(vmName),
+                            "shutdown" => _hyperV.ShutdownVmAsync(vmName),
+                            _          => Task.CompletedTask,
+                        });
+                    }
+                    catch (OperationCanceledException) { /* bridge restored — expected */ }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Bridge-lost action failed for {Vm}", vmName);
+                    }
+                    finally
+                    {
+                        // Remove the completed entry so the dictionary doesn't accumulate
+                        // stale CTS objects after actions have already fired.
+                        lock (_disconnectLock)
+                        {
+                            if (_pendingDisconnect.TryGetValue(vmName, out var current) &&
+                                ReferenceEquals(current, cts))
+                                _pendingDisconnect.Remove(vmName);
+                        }
+                    }
+                }, CancellationToken.None);
+            }
         }
     }
 
     private void CancelDisconnectActions()
     {
-        foreach (var kv in _pendingDisconnect)
+        lock (_disconnectLock)
         {
-            _logger.LogInformation("Bridge restored — cancelling pending action for {Vm}", kv.Key);
-            kv.Value.Cancel();
-            kv.Value.Dispose();
+            foreach (var kv in _pendingDisconnect)
+            {
+                _logger.LogInformation("Bridge restored — cancelling pending action for {Vm}", kv.Key);
+                kv.Value.Cancel();
+                kv.Value.Dispose();
+            }
+            _pendingDisconnect.Clear();
         }
-        _pendingDisconnect.Clear();
     }
 
     public void Dispose()

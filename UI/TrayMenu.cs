@@ -340,6 +340,9 @@ internal sealed class TrayMenu
 
     private async Task CheckForUpdatesAsync()
     {
+        // Capture the foreground window before awaiting so the TaskDialog has a parent
+        // even when the continuation runs on a thread-pool thread (ConfigureAwait false).
+        var hwnd    = NativeMethods.CaptureHwnd();
         var result  = await _updateChecker.CheckAsync().ConfigureAwait(false);
         var running = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "unknown";
 
@@ -353,7 +356,7 @@ internal sealed class TrayMenu
             var action = NativeMethods.ShowUpdateDialog(
                 result.LatestVersion, running,
                 result.ReleaseNotes,  AppName,
-                canDownload);
+                canDownload,          hwnd);
 
             switch (action)
             {

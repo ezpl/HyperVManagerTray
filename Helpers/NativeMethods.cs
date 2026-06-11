@@ -113,6 +113,13 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    /// <summary>Returns the current foreground window HWND; useful for capturing a parent
+    /// before ConfigureAwait(false) moves the continuation off the UI thread.</summary>
+    internal static IntPtr CaptureHwnd() => GetForegroundWindow();
+
     internal static void Info(string text, string caption)
         => MessageBoxW(IntPtr.Zero, text, caption, MB_ICONINFORMATION | MB_TOPMOST);
 
@@ -202,6 +209,11 @@ internal static class NativeMethods
         string releaseNotes,  string appName,
         bool   canDownload,   IntPtr hwndParent = default)
     {
+        // Fall back to the current foreground window so the dialog is never orphaned
+        // behind an always-on-top window when no explicit parent is supplied (e.g. tray menu).
+        if (hwndParent == IntPtr.Zero)
+            hwndParent = GetForegroundWindow();
+
         // Collect all unmanaged string allocations so we can free them in one pass.
         var strings = new List<IntPtr>(12);
         IntPtr Str(string? s)
