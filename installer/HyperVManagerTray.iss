@@ -97,42 +97,54 @@ const
 // The app is published framework-dependent and requires .NET 10 Desktop Runtime
 // (Microsoft.WindowsDesktop.App 10.x).
 //
-// Detection strategy (investigated on-machine — see findings below):
+// DETECTION — Microsoft's recommended method (two-level with filesystem fallback):
 //
-// The registry path commonly documented for per-framework detection
-// (SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App)
-// does NOT exist on all machines.  On machines where only the windowsdesktop-runtime
-// bundle is used (not the SDK), only the 'sharedhost' subkey is written:
-//   HKLM64\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost
-//     Path    = C:\Program Files\dotnet\
-//     Version = 10.0.x
+// Primary: HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App\{version}
+//   In a 32-bit Inno Setup process, HKLM reads the WOW6432Node hive, which is
+//   also where the .NET installer writes the 32-bit-accessible view of these keys.
+//   HKLM64 accesses the native 64-bit view.  Both are checked for compatibility.
+//   Source: https://learn.microsoft.com/en-us/dotnet/core/install/how-to-detect-installed-versions
 //
-// The most reliable indicator for Desktop Runtime specifically is the filesystem:
-// the runtime unpacks its payload to {DotNetPath}\shared\Microsoft.WindowsDesktop.App\{version}\
-// and this directory always exists when the runtime is installed, regardless of
-// which registry keys were written.
-//
-// Algorithm:
-//   1. Read the dotnet install path from HKLM64\sharedhost\Path (avoids hardcoding
-//      C:\Program Files\dotnet\ for non-default installs).
-//   2. Fall back to {pf64}\dotnet\ if the registry key is absent.
-//   3. FindFirst for a 10.* subdirectory under shared\Microsoft.WindowsDesktop.App\.
+// Fallback: filesystem check via the dotnet install path from HKLM64\sharedhost\Path.
+//   On some machines (e.g. windowsdesktop-runtime bundle installs) the sharedfx
+//   subkeys are not written.  The runtime payload directory is always present.
 function IsDotNet10DesktopInstalled: Boolean;
 var
-  DotNetPath: string;
+  SubKeyNames: TArrayOfString;
+  I: Integer;
+  SharedfxPath, DotNetPath: string;
   FindRec: TFindRec;
 begin
   Result := False;
+  SharedfxPath := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
 
+  // Check 1: 32-bit registry view (WOW6432Node — what HKLM gives a 32-bit process)
+  if RegGetSubkeyNames(HKLM, SharedfxPath, SubKeyNames) then
+    for I := 0 to GetArrayLength(SubKeyNames) - 1 do
+      if Copy(SubKeyNames[I], 1, 3) = '10.' then
+      begin
+        Result := True;
+        Exit;
+      end;
+
+  // Check 2: 64-bit registry view (native hive via HKLM64)
+  if RegGetSubkeyNames(HKLM64, SharedfxPath, SubKeyNames) then
+    for I := 0 to GetArrayLength(SubKeyNames) - 1 do
+      if Copy(SubKeyNames[I], 1, 3) = '10.' then
+      begin
+        Result := True;
+        Exit;
+      end;
+
+  // Check 3: filesystem fallback — runtime payload directory under the dotnet root.
+  // Read the install path from the registry; fall back to the default Program Files
+  // location so non-standard installs are still detected.
   if not RegQueryStringValue(HKLM64,
       'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost',
       'Path', DotNetPath) then
     DotNetPath := ExpandConstant('{pf64}\dotnet\');
-
-  // Ensure trailing backslash before appending the sub-path.
   if (Length(DotNetPath) > 0) and (DotNetPath[Length(DotNetPath)] <> '\') then
     DotNetPath := DotNetPath + '\';
-
   if FindFirst(DotNetPath + 'shared\Microsoft.WindowsDesktop.App\10.*', FindRec) then
   begin
     FindClose(FindRec);
@@ -140,7 +152,7 @@ begin
   end;
 end;
 
-// urlmon.dll — synchronous HTTP(S) download to a local file; no external dependencies.
+// urlmon.dll — synchronous HTTPS download; fallback when winget is unavailable.
 function URLDownloadToFileW(pCaller: IUnknown; URL, FileName: String;
   Reserved: LongWord; lpfnCB: IUnknown): HResult;
   external 'URLDownloadToFileW@urlmon.dll stdcall';
@@ -156,12 +168,8 @@ begin
   if MsgBox(
       '.NET 10 Desktop Runtime is required but was not found on this machine.'
       + #13#10#13#10
-      + 'Click OK to download and install it automatically (~55 MB).'
+      + 'Click OK to install it automatically (requires internet access).'
       + #13#10
-      + 'Setup will be unresponsive for 30–60 seconds while downloading,'
-      + #13#10
-      + 'then the .NET installer will appear and complete on its own.'
-      + #13#10#13#10
       + 'Click Cancel to abort.',
       mbInformation, MB_OKCANCEL) <> IDOK then
   begin
@@ -169,6 +177,23 @@ begin
     Exit;
   end;
 
+  // Preferred path: Windows Package Manager (winget).
+  // winget handles the download and installation silently — no explicit download
+  // step, no separate installer window.  Available on Windows 10 21H1+ / Windows 11.
+  // Source: https://learn.microsoft.com/en-us/windows/package-manager/winget/
+  if Exec('winget.exe',
+      'install --id Microsoft.DotNet.DesktopRuntime.10 --silent ' +
+      '--accept-package-agreements --accept-source-agreements',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    // 0 = installed; -1978335189 (0x8A150013) = already installed (concurrent install race)
+    if (ResultCode = 0) or (ResultCode = -1978335189) then Exit;
+    // Any other code: fall through to direct-download fallback.
+  end;
+
+  // Fallback: winget is unavailable or reported an error.
+  // Download the official bootstrapper and run it with /passive so the user
+  // sees a minimal progress window without manual interaction.
   TempExe := ExpandConstant('{tmp}\dotnet-windowsdesktop-runtime.exe');
 
   if URLDownloadToFileW(nil,
@@ -181,9 +206,6 @@ begin
     Exit;
   end;
 
-  // /passive: shows a minimal progress window, no user interaction required.
-  // /norestart: suppress any reboot prompt (we handle it below if needed).
-  // ewWaitUntilTerminated: blocks until the runtime install finishes.
   if not Exec(TempExe, '/install /passive /norestart', '',
               SW_SHOW, ewWaitUntilTerminated, ResultCode) then
   begin
@@ -193,10 +215,7 @@ begin
     Exit;
   end;
 
-  // Exit code 0 = success, 3010 = success + reboot pending (we suppress the reboot).
-  // Trust the installer's own exit code — do not re-check the registry.  The MSI
-  // chain inside the bootstrapper may not have flushed the registry key yet in the
-  // same process session, causing the re-check to return a false negative.
+  // Trust the bootstrapper's exit code (0 = success, 3010 = success + reboot pending).
   if (ResultCode <> 0) and (ResultCode <> 3010) then
   begin
     MsgBox('The .NET installer exited with code ' + IntToStr(ResultCode) + '.'
