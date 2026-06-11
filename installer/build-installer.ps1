@@ -107,8 +107,14 @@ $outputDir = Join-Path $installerDir "Output"
 if (Test-Path $outputDir) {
     $old = Get-ChildItem $outputDir -Filter "HyperVManagerTray-Setup-*.exe" -File -ErrorAction SilentlyContinue
     foreach ($f in $old) {
-        Remove-Item $f.FullName -Force
-        Write-Host "    Removed old installer: $($f.Name)" -ForegroundColor DarkGray
+        # Use cmd /c del to bypass OneDrive cloud-placeholder reparse points that
+        # PowerShell's Remove-Item cannot delete (access denied on the placeholder).
+        cmd /c "del /F `"$($f.FullName)`"" 2>$null
+        if (Test-Path $f.FullName) {
+            Write-Warning "Could not remove old installer (file in use?): $($f.Name)"
+        } else {
+            Write-Host "    Removed old installer: $($f.Name)" -ForegroundColor DarkGray
+        }
     }
 }
 Write-Host "==> Compiling installer with $iscc ..." -ForegroundColor Cyan

@@ -97,24 +97,47 @@ const
 // The app is published framework-dependent and requires .NET 10 Desktop Runtime
 // (Microsoft.WindowsDesktop.App 10.x).
 //
-// IMPORTANT: dotnet writes to the 64-bit registry hive. Inno Setup runs as a 32-bit
-// process, so HKLM alone reads WOW6432Node and never finds the key. HKLM64 forces
-// the 64-bit view and is required for the check to work correctly.
+// Detection strategy (investigated on-machine — see findings below):
+//
+// The registry path commonly documented for per-framework detection
+// (SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App)
+// does NOT exist on all machines.  On machines where only the windowsdesktop-runtime
+// bundle is used (not the SDK), only the 'sharedhost' subkey is written:
+//   HKLM64\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost
+//     Path    = C:\Program Files\dotnet\
+//     Version = 10.0.x
+//
+// The most reliable indicator for Desktop Runtime specifically is the filesystem:
+// the runtime unpacks its payload to {DotNetPath}\shared\Microsoft.WindowsDesktop.App\{version}\
+// and this directory always exists when the runtime is installed, regardless of
+// which registry keys were written.
+//
+// Algorithm:
+//   1. Read the dotnet install path from HKLM64\sharedhost\Path (avoids hardcoding
+//      C:\Program Files\dotnet\ for non-default installs).
+//   2. Fall back to {pf64}\dotnet\ if the registry key is absent.
+//   3. FindFirst for a 10.* subdirectory under shared\Microsoft.WindowsDesktop.App\.
 function IsDotNet10DesktopInstalled: Boolean;
 var
-  SubKeyNames: TArrayOfString;
-  I: Integer;
-  RootPath: string;
+  DotNetPath: string;
+  FindRec: TFindRec;
 begin
   Result := False;
-  RootPath := 'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx\Microsoft.WindowsDesktop.App';
-  if RegGetSubkeyNames(HKLM64, RootPath, SubKeyNames) then
-    for I := 0 to GetArrayLength(SubKeyNames) - 1 do
-      if Copy(SubKeyNames[I], 1, 3) = '10.' then
-      begin
-        Result := True;
-        Exit;
-      end;
+
+  if not RegQueryStringValue(HKLM64,
+      'SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedhost',
+      'Path', DotNetPath) then
+    DotNetPath := ExpandConstant('{pf64}\dotnet\');
+
+  // Ensure trailing backslash before appending the sub-path.
+  if (Length(DotNetPath) > 0) and (DotNetPath[Length(DotNetPath)] <> '\') then
+    DotNetPath := DotNetPath + '\';
+
+  if FindFirst(DotNetPath + 'shared\Microsoft.WindowsDesktop.App\10.*', FindRec) then
+  begin
+    FindClose(FindRec);
+    Result := True;
+  end;
 end;
 
 // urlmon.dll — synchronous HTTP(S) download to a local file; no external dependencies.
@@ -171,19 +194,13 @@ begin
   end;
 
   // Exit code 0 = success, 3010 = success + reboot pending (we suppress the reboot).
+  // Trust the installer's own exit code — do not re-check the registry.  The MSI
+  // chain inside the bootstrapper may not have flushed the registry key yet in the
+  // same process session, causing the re-check to return a false negative.
   if (ResultCode <> 0) and (ResultCode <> 3010) then
   begin
     MsgBox('The .NET installer exited with code ' + IntToStr(ResultCode) + '.'
            + #13#10 + 'Please install .NET 10 Desktop Runtime manually and try again.',
-           mbError, MB_OK);
-    Result := False;
-    Exit;
-  end;
-
-  if not IsDotNet10DesktopInstalled then
-  begin
-    MsgBox('.NET 10 Desktop Runtime installation did not register correctly.'
-           + #13#10 + 'Please restart your machine and run this installer again.',
            mbError, MB_OK);
     Result := False;
   end;
