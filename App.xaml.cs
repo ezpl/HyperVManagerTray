@@ -321,10 +321,6 @@ public partial class App : Application
 
     // ── Dashboard ───────────────────────────────────────────────────────────────
 
-    // A tray click that lands while the popup is open first deactivates it (auto-hiding);
-    // guard against immediately re-showing it from the same click.
-    private const int ReopenGuardMs = 300;
-
     private void ToggleDashboard()
     {
         if (_dashboard is null)
@@ -335,7 +331,11 @@ public partial class App : Application
 
         if (_dashboard.AppWindow.IsVisible)
             _dashboard.HideWindow();
-        else if (_dashboard.SinceHidden.TotalMilliseconds > ReopenGuardMs)
+        else if (!_dashboard.HiddenByThisClick)
+            // HiddenByThisClick filters out exactly one case: the tray click that is itself
+            // the deactivation that just auto-hid the popup (that click means "close", not
+            // "reopen").  Any other click — including a quick dismiss-elsewhere-then-tray
+            // sequence — shows the window.
             _dashboard.ShowNearTray();
     }
 

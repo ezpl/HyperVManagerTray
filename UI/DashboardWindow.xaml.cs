@@ -33,8 +33,31 @@ public sealed partial class DashboardWindow : Window
     private DateTime _lastVhdUtc = DateTime.MinValue;
     private bool     _loading;
 
-    private DateTime _hiddenAtUtc = DateTime.MinValue;
-    public TimeSpan SinceHidden => DateTime.UtcNow - _hiddenAtUtc;
+    // ── Same-click detection ────────────────────────────────────────────────────
+    // Clicking the tray icon while the popup is open first deactivates it (auto-hide),
+    // then delivers the click command — without a guard that click would instantly
+    // re-show the window it just toggled closed.  Time alone can't tell that apart from
+    // a genuine quick re-open (dismiss by clicking the desktop, then click the tray), so
+    // we also require the cursor to still be where it was when the hide happened: for
+    // the click-through case both events come from the same physical click (distance≈0);
+    // for a real re-open the cursor has travelled from the dismiss point to the tray.
+    private const int SameClickMs       = 400;
+    private const int SameClickRadiusPx = 24;
+
+    private DateTime  _hiddenAtUtc = DateTime.MinValue;
+    private (int X, int Y) _hiddenCursor = (int.MinValue, int.MinValue);
+
+    /// <summary>True when the tray click being handled is the same physical click that just auto-hid this window.</summary>
+    public bool HiddenByThisClick
+    {
+        get
+        {
+            if ((DateTime.UtcNow - _hiddenAtUtc).TotalMilliseconds > SameClickMs) return false;
+            var (x, y) = NativeMethods.GetCursorPosition();
+            return Math.Abs(x - _hiddenCursor.X) <= SameClickRadiusPx
+                && Math.Abs(y - _hiddenCursor.Y) <= SameClickRadiusPx;
+        }
+    }
 
     public DashboardWindow(ConfigManager config, NetworkMonitor monitor, HyperVManager hyperV)
     {
@@ -63,7 +86,8 @@ public sealed partial class DashboardWindow : Window
     public void HideWindow()
     {
         _timer.Stop();
-        _hiddenAtUtc = DateTime.UtcNow;
+        _hiddenAtUtc  = DateTime.UtcNow;
+        _hiddenCursor = NativeMethods.GetCursorPosition();
         AppWindow.Hide();
     }
 
@@ -116,11 +140,18 @@ public sealed partial class DashboardWindow : Window
 
     private void Refresh()
     {
-        var result = _monitor.LastApplied ?? AdapterMatcher.Evaluate(_config.Current);
-        ApplyHostStatus(result);
-        // Show VM cards immediately with "Updating" state so the section isn't empty on open.
-        // LoadVmsAsync (triggered by OnActivated) will replace these with real data.
-        BuildCards(Array.Empty<VmStatus>());
+        // Never evaluate the network synchronously here — GetAllNetworkInterfaces() +
+        // GetIPProperties() can block the UI thread for hundreds of ms, delaying the
+        // window's appearance.  LastApplied is populated by NetworkMonitor's immediate
+        // startup evaluation; until it lands, the host card keeps its placeholder text
+        // and OnSwitchApplied fills it in moments later.
+        if (_monitor.LastApplied is { } result) ApplyHostStatus(result);
+
+        // First open only: build placeholder "Updating" cards so the popup opens at full
+        // size instead of growing when data arrives.  On later opens the cards from the
+        // previous session are still present (the window is hidden, never closed) and
+        // LoadVmsAsync — triggered by OnActivated — refreshes them in place.
+        if (VmPanel.Children.Count == 0) BuildCards([]);
     }
 
     private void ApplyHostStatus(MatchResult result)
@@ -141,48 +172,148 @@ public sealed partial class DashboardWindow : Window
         _loading = true;
         try
         {
-            var configVms = _config.Current.VirtualMachines;
-            var names     = configVms.Select(v => v.Name).ToList();
+            var names = _config.Current.VirtualMachines.Select(v => v.Name).ToList();
 
-            // Query statuses for config VMs (may be empty list — that's fine)
-            var statuses = names.Count > 0
-                ? await _hyperV.GetVmStatusesAsync(names)
-                : Array.Empty<VmStatus>();
-
-            if (names.Count > 0 && DateTime.UtcNow - _lastVhdUtc > VhdPollInterval)
+            IReadOnlyList<VmStatus> statuses = [];
+            if (names.Count > 0)
             {
-                foreach (var kv in await _hyperV.GetVmVhdSizesAsync(names)) _vhd[kv.Key] = kv.Value;
-                _lastVhdUtc = DateTime.UtcNow;
+                // Status + (periodically) VHD sizes in ONE PowerShell round-trip — the
+                // worker serialises commands anyway, so two separate queries would just
+                // double the per-cycle cost.
+                bool wantVhd = DateTime.UtcNow - _lastVhdUtc > VhdPollInterval;
+                var (st, vhd) = await _hyperV.GetVmDashboardAsync(names, wantVhd);
+                statuses = st;
+                if (wantVhd)
+                {
+                    foreach (var kv in vhd) _vhd[kv.Key] = kv.Value;
+                    _lastVhdUtc = DateTime.UtcNow;
+                }
             }
             foreach (var s in statuses) if (_vhd.TryGetValue(s.Name, out var b)) s.VhdBytes = b;
 
             DispatcherQueue.TryEnqueue(() =>
             {
-                BuildCards(statuses);
-                // Defer resize by one extra frame so WinUI's layout system processes
-                // the newly added card children before Measure() is called — otherwise
-                // DesiredSize still reflects the pre-cards (empty) layout.
-                DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (AppWindow.IsVisible) ResizeAndPlace();
-                });
+                bool layoutChanged = BuildCards(statuses);
+                // Only re-measure the window when a card's layout actually changed (rows
+                // appeared/disappeared); pure value updates never affect the size.  Defer
+                // by one frame so WinUI's layout pass has processed the new children —
+                // otherwise DesiredSize still reflects the previous layout.
+                if (layoutChanged)
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (AppWindow.IsVisible) ResizeAndPlace();
+                    });
             });
         }
         finally { _loading = false; }
     }
 
-    private void BuildCards(IReadOnlyList<VmStatus> statuses)
-    {
-        VmPanel.Children.Clear();
+    // ── Card cache ──────────────────────────────────────────────────────────────
+    // Cards are rebuilt only when their layout shape changes (state category, meter rows,
+    // button set); per-tick value changes (CPU %, memory, uptime) are written into the
+    // existing TextBlocks/ProgressBars.  This avoids reconstructing ~40 UI objects per VM
+    // every second while the dashboard is open.
 
-        foreach (var vm in _config.Current.VirtualMachines)
-        {
-            var s = statuses.FirstOrDefault(x => x.Name.Equals(vm.Name, StringComparison.OrdinalIgnoreCase));
-            VmPanel.Children.Add(BuildCard(vm, s));
-        }
+    private sealed class VmCard
+    {
+        public required Border    Root;
+        public required string    Shape;     // layout signature — rebuild when it changes
+        public required TextBlock State;
+        public required TextBlock Subtitle;
+        public TextBlock?   Uptime;
+        public TextBlock?   CpuValue;
+        public ProgressBar? CpuBar;
+        public TextBlock?   MemValue;
+        public ProgressBar? MemBar;
+        public TextBlock?   DiskValue;
     }
 
-    private Border BuildCard(VmTarget vm, VmStatus? s)
+    private readonly Dictionary<string, VmCard> _cards = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> _cardOrder = [];
+
+    /// <summary>Categorises everything that affects a card's row/button layout.</summary>
+    private static string ShapeOf(VmStatus? s) =>
+        (s switch { null => "none", { IsRunning: true } => "run", { IsPaused: true } => "pause", _ => "off" })
+        + "|" + (FormatUptime(s).Length > 0)
+        + "|" + (s is { VhdBytes: > 0 });
+
+    /// <summary>
+    /// Creates/updates the VM cards; returns true when any card's layout changed
+    /// (so the window needs re-measuring).
+    /// </summary>
+    private bool BuildCards(IReadOnlyList<VmStatus> statuses)
+    {
+        var vms = _config.Current.VirtualMachines;
+
+        // VM set/order changed (config edit, first open) → rebuild the panel wholesale.
+        if (!vms.Select(v => v.Name).SequenceEqual(_cardOrder, StringComparer.OrdinalIgnoreCase))
+        {
+            VmPanel.Children.Clear();
+            _cards.Clear();
+            _cardOrder = vms.Select(v => v.Name).ToList();
+            foreach (var vm in vms)
+            {
+                var card = BuildCard(vm, FindStatus(statuses, vm.Name));
+                _cards[vm.Name] = card;
+                VmPanel.Children.Add(card.Root);
+            }
+            return true;
+        }
+
+        bool layoutChanged = false;
+        for (int i = 0; i < vms.Count; i++)
+        {
+            var vm = vms[i];
+            var s  = FindStatus(statuses, vm.Name);
+            if (!_cards.TryGetValue(vm.Name, out var card) || card.Shape != ShapeOf(s))
+            {
+                card = BuildCard(vm, s);          // layout shape changed → rebuild this card
+                _cards[vm.Name]      = card;
+                VmPanel.Children[i]  = card.Root;
+                layoutChanged        = true;
+            }
+            else
+            {
+                UpdateCard(card, s);              // same shape → update values in place
+            }
+        }
+        return layoutChanged;
+    }
+
+    private static VmStatus? FindStatus(IReadOnlyList<VmStatus> statuses, string name) =>
+        statuses.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+    private void UpdateCard(VmCard card, VmStatus? s)
+    {
+        card.State.Text       = FormatState(s);
+        card.State.Foreground = StateBrush(s);
+        card.Subtitle.Text    = Subtitle(s);
+        if (card.Uptime is not null) card.Uptime.Text = FormatUptime(s);
+        if (s is null) return;
+        if (card.CpuValue is not null) { card.CpuValue.Text = $"{s.Cpu}%"; SetBar(card.CpuBar, s.Cpu / 100.0); }
+        if (card.MemValue is not null) { card.MemValue.Text = $"{s.MemAssignedMb:N0} MB"; SetBar(card.MemBar, s.MemoryFraction); }
+        if (card.DiskValue is not null) card.DiskValue.Text = $"{s.VhdGb:N1} GB";
+    }
+
+    private static void SetBar(ProgressBar? bar, double fraction)
+    {
+        if (bar is null) return;
+        bar.Value      = Math.Clamp(fraction * 100, 0, 100);
+        bar.Foreground = BarBrush(fraction);
+    }
+
+    private static Brush BarBrush(double fraction) =>
+        fraction <= 0.5  ? AppColors.GaugeLowBrush
+      : fraction <= 0.85 ? AppColors.GaugeMedBrush
+      :                    AppColors.GaugeHighBrush;
+
+    private string Subtitle(VmStatus? s)
+    {
+        var switchText = !string.IsNullOrWhiteSpace(s?.Switch) ? s!.Switch : "—";
+        return $"{switchText}  ·  {_monitor.LastApplied?.RuleName ?? "—"}";
+    }
+
+    private VmCard BuildCard(VmTarget vm, VmStatus? s)
     {
         bool running = s?.IsRunning == true;
         var rows = new StackPanel { Spacing = 6 };
@@ -215,10 +346,11 @@ public sealed partial class DashboardWindow : Window
         header.Children.Add(title);
         header.Children.Add(stateLabel);
 
+        TextBlock? uptimeLbl = null;
         var uptimeText = FormatUptime(s);
         if (!string.IsNullOrEmpty(uptimeText))
         {
-            var uptimeLbl = new TextBlock
+            uptimeLbl = new TextBlock
             {
                 Text                = uptimeText,
                 FontSize            = 10,
@@ -233,28 +365,28 @@ public sealed partial class DashboardWindow : Window
         rows.Children.Add(header);
 
         // ── Switch / rule subtitle ───────────────────────────────────────────
-        var switchText = !string.IsNullOrWhiteSpace(s?.Switch) ? s.Switch : "—";
-        var ruleText   = _monitor.LastApplied?.RuleName ?? "—";
-        rows.Children.Add(new TextBlock
+        var subtitle = new TextBlock
         {
-            Text       = $"{switchText}  ·  {ruleText}",
+            Text       = Subtitle(s),
             FontSize   = 10,
             Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
-        });
+        };
+        rows.Children.Add(subtitle);
 
         // ── Metrics (running VMs only) ───────────────────────────────────────
+        (TextBlock Value, ProgressBar? Bar)? cpu = null, mem = null, disk = null;
         if (running && s is not null)
         {
-            rows.Children.Add(Meter("CPU", $"{s.Cpu}%",           s.Cpu / 100.0));
-            rows.Children.Add(Meter("Mem", $"{s.MemAssignedMb:N0} MB", s.MemoryFraction));
+            cpu = AddMeter(rows, "CPU", $"{s.Cpu}%",                s.Cpu / 100.0);
+            mem = AddMeter(rows, "Mem", $"{s.MemAssignedMb:N0} MB", s.MemoryFraction);
         }
         if (s is not null && s.VhdBytes > 0)
-            rows.Children.Add(Meter("Disk", $"{s.VhdGb:N1} GB", -1));
+            disk = AddMeter(rows, "Disk", $"{s.VhdGb:N1} GB", -1);
 
         // ── Power buttons ────────────────────────────────────────────────────
         rows.Children.Add(BuildButtons(vm, s));
 
-        return new Border
+        var root = new Border
         {
             CornerRadius  = new CornerRadius(6),
             Padding       = new Thickness(10, 8, 10, 8),
@@ -263,10 +395,24 @@ public sealed partial class DashboardWindow : Window
             BorderThickness = new Thickness(1),
             Child         = rows,
         };
+
+        return new VmCard
+        {
+            Root      = root,
+            Shape     = ShapeOf(s),
+            State     = stateLabel,
+            Subtitle  = subtitle,
+            Uptime    = uptimeLbl,
+            CpuValue  = cpu?.Value,  CpuBar = cpu?.Bar,
+            MemValue  = mem?.Value,  MemBar = mem?.Bar,
+            DiskValue = disk?.Value,
+        };
     }
 
-    // label + optional progress bar + value
-    private static Grid Meter(string label, string value, double fraction)
+    // Adds a "label + optional progress bar + value" row and returns the mutable parts
+    // so UpdateCard can refresh them in place on later ticks.
+    private static (TextBlock Value, ProgressBar? Bar) AddMeter(
+        StackPanel rows, string label, string value, double fraction)
     {
         var g = new Grid { ColumnSpacing = 8 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
@@ -284,18 +430,17 @@ public sealed partial class DashboardWindow : Window
         Grid.SetColumn(lbl, 0);
         g.Children.Add(lbl);
 
+        ProgressBar? bar = null;
         if (fraction >= 0)
         {
-            var bar = new ProgressBar
+            bar = new ProgressBar
             {
                 Minimum           = 0,
                 Maximum           = 100,
                 Value             = Math.Clamp(fraction * 100, 0, 100),
                 Height            = 6,
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground        = fraction <= 0.5 ? AppColors.GaugeLowBrush
-                                  : fraction <= 0.85 ? AppColors.GaugeMedBrush
-                                  : AppColors.GaugeHighBrush,
+                Foreground        = BarBrush(fraction),
             };
             Grid.SetColumn(bar, 1);
             g.Children.Add(bar);
@@ -304,7 +449,9 @@ public sealed partial class DashboardWindow : Window
         var val = new TextBlock { Text = value, FontSize = 11, Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"], VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(val, 2);
         g.Children.Add(val);
-        return g;
+
+        rows.Children.Add(g);
+        return (val, bar);
     }
 
     private StackPanel BuildButtons(VmTarget vm, VmStatus? s)

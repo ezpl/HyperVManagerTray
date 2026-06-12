@@ -6,14 +6,17 @@ using HyperVManagerTray.Models;
 namespace HyperVManagerTray.Services;
 
 /// <summary>
-/// Runs Hyper-V PowerShell cmdlets by spawning powershell.exe as a child process.
-/// This avoids the Microsoft.PowerShell.SDK in-process runspace, which fails to
-/// initialise in self-contained single-file builds due to a registry lookup
-/// (PSSnapInReader) that returns null when the Windows PowerShell engine key is absent.
+/// Runs Hyper-V PowerShell cmdlets through a single persistent powershell.exe worker
+/// process (read-eval loop over stdin/stdout), avoiding the 1-2 s process+module startup
+/// that a per-command spawn would cost on every dashboard poll.  The worker is reaped
+/// after a couple of minutes of inactivity so an idle tray app holds no extra process.
 ///
-/// powershell.exe (Windows PowerShell 5.1) is always present on Windows 10/11 and
-/// supports all required Hyper-V cmdlets.  Commands are passed as a Base64-encoded
-/// Unicode string (-EncodedCommand) to sidestep all quoting/escaping concerns.
+/// An out-of-process worker (rather than the Microsoft.PowerShell.SDK in-process runspace)
+/// is used because the SDK fails to initialise in self-contained builds due to a registry
+/// lookup (PSSnapInReader) that returns null when the Windows PowerShell engine key is
+/// absent.  powershell.exe (Windows PowerShell 5.1) is always present on Windows 10/11 and
+/// supports all required Hyper-V cmdlets.  Commands are passed as Base64-encoded Unicode
+/// lines to sidestep all quoting/escaping concerns.
 /// </summary>
 public sealed class HyperVManager : IDisposable
 {
@@ -36,7 +39,14 @@ public sealed class HyperVManager : IDisposable
     /// <summary>Represents a VM discovered on the local Hyper-V host (may or may not be in config).</summary>
     public sealed record DiscoveredVm(string Name, string NicName);
 
-    public HyperVManager(ILogger<HyperVManager> logger) => _logger = logger;
+    public HyperVManager(ILogger<HyperVManager> logger)
+    {
+        _logger = logger;
+        // Periodically stop the worker process when it has been idle long enough that the
+        // next caller is better served by a fresh spawn than by ~80 MB of warm-but-unused PS.
+        _workerReaper = new System.Threading.Timer(
+            _ => ReapIdleWorker(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -291,51 +301,79 @@ public sealed class HyperVManager : IDisposable
 
     // ── VM status / metrics ─────────────────────────────────────────────────────
 
-    /// <summary>Queries live state + metrics for the named VMs (one PowerShell call).</summary>
-    public async Task<IReadOnlyList<VmStatus>> GetVmStatusesAsync(IEnumerable<string> names)
+    /// <summary>
+    /// Queries live state + metrics — and optionally VHD sizes — for the named VMs in a
+    /// SINGLE PowerShell round-trip.  The dashboard polls this every second while open, so
+    /// batching the (slow) VHD enumeration into the same call halves the per-cycle cost
+    /// versus issuing two separate queries that the worker would serialise anyway.
+    /// Never throws — returns empty collections on any error.
+    /// </summary>
+    public async Task<(IReadOnlyList<VmStatus> Statuses, IReadOnlyDictionary<string, long> VhdBytes)>
+        GetVmDashboardAsync(IEnumerable<string> names, bool includeVhd)
     {
         var quoted = names.Select(n => $"'{Esc(n)}'").ToList();
-        if (quoted.Count == 0) return [];
+        if (quoted.Count == 0) return ([], new Dictionary<string, long>());
 
-        _logger.LogDebug("Querying VM statuses for {VmCount} VM(s)...", quoted.Count);
+        _logger.LogDebug("Querying dashboard data for {VmCount} VM(s) (vhd={Vhd})...", quoted.Count, includeVhd);
+
+        var vhdPart = includeVhd
+            ? "@($vms | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; Vhd = [int64](($_ | Get-VMHardDiskDrive | " +
+              "Get-VHD -ErrorAction SilentlyContinue | Measure-Object -Property FileSize -Sum).Sum) } })"
+            : "@()";
 
         var script =
             "$ProgressPreference='SilentlyContinue'; " +
-            $"Get-VM -Name {string.Join(",", quoted)} -ErrorAction SilentlyContinue | ForEach-Object {{ " +
-            "[PSCustomObject]@{ Name = $_.Name; State = $_.State.ToString(); Cpu = [int]$_.CPUUsage; " +
+            $"$vms = @(Get-VM -Name {string.Join(",", quoted)} -ErrorAction SilentlyContinue); " +
+            "$st = @($vms | ForEach-Object { [PSCustomObject]@{ Name = $_.Name; State = $_.State.ToString(); Cpu = [int]$_.CPUUsage; " +
             "MemAssigned = [int64]$_.MemoryAssigned; MemMax = [int64]$_.MemoryMaximum; " +
             "Uptime = $_.Uptime.ToString(); " +
             "Switch = ($_.NetworkAdapters | Select-Object -First 1).SwitchName; " +
-            "StatusDesc = ($_.StatusDescriptions -join ' ') } } | ConvertTo-Json -Depth 3";
+            "StatusDesc = ($_.StatusDescriptions -join ' ') } }); " +
+            $"$vhd = {vhdPart}; " +
+            "[PSCustomObject]@{ Status = $st; Vhd = $vhd } | ConvertTo-Json -Depth 4";
 
         var (ok, output) = await RunAsync(script);
-        if (!ok) _logger.LogWarning("GetVmStatusesAsync: PowerShell query failed: {Error}", output);
-        else     _logger.LogDebug("GetVmStatusesAsync: PS query completed.");
-        return DeserializeArrayOrObject<VmStatus>(ok ? output : "");
-    }
+        if (!ok || string.IsNullOrWhiteSpace(output))
+        {
+            if (!ok) _logger.LogWarning("GetVmDashboardAsync: PowerShell query failed: {Error}", output);
+            return ([], new Dictionary<string, long>());
+        }
 
-    /// <summary>Sums each VM's attached VHD file sizes on the host (slower — call less often).</summary>
-    public async Task<IReadOnlyDictionary<string, long>> GetVmVhdSizesAsync(IEnumerable<string> names)
-    {
-        var quoted = names.Select(n => $"'{Esc(n)}'").ToList();
-        if (quoted.Count == 0) return new Dictionary<string, long>();
-
-        _logger.LogDebug("Querying VHD sizes for {VmCount} VM(s)...", quoted.Count);
-
-        var script =
-            "$ProgressPreference='SilentlyContinue'; " +
-            $"Get-VM -Name {string.Join(",", quoted)} -ErrorAction SilentlyContinue | ForEach-Object {{ " +
-            "[PSCustomObject]@{ Name = $_.Name; Vhd = [int64](($_ | Get-VMHardDiskDrive | " +
-            "Get-VHD -ErrorAction SilentlyContinue | Measure-Object -Property FileSize -Sum).Sum) } } | ConvertTo-Json -Depth 3";
-
-        var (ok, output) = await RunAsync(script);
-        if (!ok) _logger.LogWarning("GetVmVhdSizesAsync: PowerShell query failed: {Error}", output);
-        else     _logger.LogDebug("GetVmVhdSizesAsync: PS query completed.");
-        var list = DeserializeArrayOrObject<VhdEntry>(ok ? output : "");
-        return list.ToDictionary(e => e.Name, e => e.Vhd);
+        try
+        {
+            using var doc = JsonDocument.Parse(output);
+            var statuses = doc.RootElement.TryGetProperty("Status", out var st)
+                ? ParseListElement<VmStatus>(st) : [];
+            var vhdList  = doc.RootElement.TryGetProperty("Vhd", out var vh)
+                ? ParseListElement<VhdEntry>(vh) : [];
+            return (statuses, vhdList.ToDictionary(e => e.Name, e => e.Vhd));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GetVmDashboardAsync: failed to parse JSON output");
+            return ([], new Dictionary<string, long>());
+        }
     }
 
     private sealed class VhdEntry { public string Name { get; set; } = ""; public long Vhd { get; set; } }
+
+    /// <summary>
+    /// Deserialises a nested element that PS 5.1's <c>ConvertTo-Json</c> may emit as an array,
+    /// a bare object (single item), or null/absent (empty).
+    /// </summary>
+    private static IReadOnlyList<T> ParseListElement<T>(JsonElement el)
+    {
+        try
+        {
+            return el.ValueKind switch
+            {
+                JsonValueKind.Array  => JsonSerializer.Deserialize<List<T>>(el.GetRawText(), JsonOpts) ?? [],
+                JsonValueKind.Object => [JsonSerializer.Deserialize<T>(el.GetRawText(), JsonOpts)!],
+                _                    => [],
+            };
+        }
+        catch { return []; }
+    }
 
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
@@ -354,30 +392,166 @@ public sealed class HyperVManager : IDisposable
         catch { return []; }
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Persistent PowerShell worker ────────────────────────────────────────────
+    //
+    // Spawning a fresh powershell.exe per query costs 1-2 s of startup + Hyper-V module
+    // load each time; with the dashboard polling every second that meant dozens of process
+    // launches per minute.  Instead, one hidden worker process runs a read-eval loop:
+    // each command is sent as a Base64 line on stdin, executed in the warm session, and
+    // the output is terminated by an OK/ERR sentinel line.  Commands keep the same
+    // semantics as before (non-terminating errors are merged into output; terminating
+    // errors yield ok=false).
+    //
+    // Lifecycle: spawned lazily on first use, killed+respawned on timeout or crash, and
+    // reaped after WorkerIdleTimeout of inactivity so an idle tray app holds no extra
+    // process (~80 MB) — process startup is only paid again on the next burst of activity.
+
+    private const string SentinelOk  = "<<HVMT:OK>>";
+    private const string SentinelErr = "<<HVMT:ERR>>";
+    private static readonly TimeSpan WorkerIdleTimeout = TimeSpan.FromMinutes(2);
+
+    private System.Diagnostics.Process? _worker;
+    private StreamWriter? _workerIn;
+    private StreamReader? _workerOut;
+    private DateTime _workerLastUseUtc;
+    private readonly System.Threading.Timer _workerReaper;
+
+    // The worker's read-eval loop. $ProgressPreference is session-wide; each command runs
+    // in a fresh scriptblock with default (Continue) error semantics, mirroring how the
+    // scripts behaved as standalone -EncodedCommand invocations.
+    private const string WorkerBootstrap =
+        "$ProgressPreference='SilentlyContinue'; " +
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; " +
+        "while ($true) { " +
+        "$l = [Console]::In.ReadLine(); " +
+        "if ($null -eq $l) { break }; " +
+        "if ($l.Length -eq 0) { continue }; " +
+        "$e = $false; " +
+        "try { " +
+        "$s = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($l)); " +
+        "$o = & ([ScriptBlock]::Create($s)) 2>&1 | Out-String; " +
+        "if ($o.Length -gt 0) { [Console]::Out.Write($o); if (-not $o.EndsWith(\"`n\")) { [Console]::Out.WriteLine() } } " +
+        "} catch { [Console]::Out.WriteLine($_.Exception.Message); $e = $true }; " +
+        "if ($e) { [Console]::Out.WriteLine('" + SentinelErr + "') } else { [Console]::Out.WriteLine('" + SentinelOk + "') }; " +
+        "[Console]::Out.Flush() }";
+
+    private void EnsureWorker()
+    {
+        if (_worker is { HasExited: false }) return;
+
+        KillWorker(); // clean up any dead remnants
+
+        var bootstrap = Convert.ToBase64String(Encoding.Unicode.GetBytes(WorkerBootstrap));
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName               = "powershell.exe",
+            Arguments              = $"-NonInteractive -NoProfile -ExecutionPolicy Bypass -EncodedCommand {bootstrap}",
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+            RedirectStandardInput  = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardInputEncoding  = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        };
+
+        _worker = System.Diagnostics.Process.Start(psi)
+                  ?? throw new InvalidOperationException("Failed to start PowerShell worker");
+        _workerIn  = _worker.StandardInput;
+        _workerIn.AutoFlush = true;
+        _workerOut = _worker.StandardOutput;
+
+        // Drain stderr in the background so a full pipe can never block the worker.
+        var stderr = _worker.StandardError;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                string? line;
+                while ((line = await stderr.ReadLineAsync().ConfigureAwait(false)) is not null)
+                    _logger.LogDebug("PS worker stderr: {Line}", line);
+            }
+            catch { /* worker exited — expected */ }
+        });
+
+        _logger.LogInformation("PowerShell worker started (pid {Pid}).", _worker.Id);
+    }
+
+    private void KillWorker()
+    {
+        var w = _worker;
+        _worker = null;
+        if (w is null) return;
+        try { if (!w.HasExited) w.Kill(entireProcessTree: true); } catch { /* already gone */ }
+        try { w.Dispose(); } catch { }
+        _workerIn  = null;
+        _workerOut = null;
+    }
+
+    /// <summary>Reaper callback: kills the worker after a period of inactivity (never blocks).</summary>
+    private void ReapIdleWorker()
+    {
+        try
+        {
+            if (_worker is null || DateTime.UtcNow - _workerLastUseUtc < WorkerIdleTimeout) return;
+            if (!_lock.Wait(0)) return;   // a command is running — check again next tick
+            try
+            {
+                if (_worker is not null && DateTime.UtcNow - _workerLastUseUtc >= WorkerIdleTimeout)
+                {
+                    _logger.LogDebug("PowerShell worker idle for {Idle} — stopping.", WorkerIdleTimeout);
+                    KillWorker();
+                }
+            }
+            finally { _lock.Release(); }
+        }
+        catch (ObjectDisposedException) { /* raced with Dispose — nothing to do */ }
+    }
 
     private async Task<(bool ok, string output)> RunAsync(string psScript, TimeSpan? timeout = null)
     {
         await _lock.WaitAsync();
         try
         {
-            // Base64-encode the script (UTF-16 LE) for -EncodedCommand.
-            // This avoids every quoting/escaping issue on the process command line.
-            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(psScript));
+            var to = timeout ?? TimeSpan.FromSeconds(30);
             _logger.LogDebug("PS> {Script}", psScript);
+            _workerLastUseUtc = DateTime.UtcNow;
 
-            // Default 30 s timeout guards against hanging Hyper-V cmdlets (e.g. invalid adapter
-            // names causing WMI/DCOM lookups that never time out on their own); slow operations
-            // such as the switch rebind pass a longer one.
-            var result = await ProcessRunner.RunAsync(
-                "powershell.exe",
-                $"-NonInteractive -NoProfile -WindowStyle Hidden -EncodedCommand {encoded}",
-                timeout ?? TimeSpan.FromSeconds(30));
+            // One retry: if the worker died between commands (or was idle-reaped mid-write),
+            // respawn and resend. A timeout does NOT retry — the command may be genuinely hung.
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    EnsureWorker();
+                    var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(psScript));
+                    await _workerIn!.WriteLineAsync(encoded);
 
-            if (!result.Success && result.ExitCode == -1)
-                _logger.LogWarning("PowerShell command failed/timed out: {Script} ({Error})", psScript, result.Output);
-
-            return (result.Success, result.Output);
+                    var sb = new StringBuilder();
+                    using var cts = new CancellationTokenSource(to);
+                    while (true)
+                    {
+                        var line = await _workerOut!.ReadLineAsync(cts.Token);
+                        if (line is null) throw new EndOfStreamException("PowerShell worker exited unexpectedly");
+                        if (line == SentinelOk)  { _workerLastUseUtc = DateTime.UtcNow; return (true,  sb.ToString().Trim()); }
+                        if (line == SentinelErr) { _workerLastUseUtc = DateTime.UtcNow; return (false, sb.ToString().Trim()); }
+                        sb.AppendLine(line);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Hung cmdlet (e.g. WMI/DCOM lookup that never returns) — kill the whole
+                    // worker; the next command starts a fresh one.
+                    _logger.LogWarning("PowerShell command timed out after {Timeout}s: {Script}", to.TotalSeconds, psScript);
+                    KillWorker();
+                    return (false, $"Timed out after {to.TotalSeconds:0} s");
+                }
+                catch (Exception ex) when (attempt == 0)
+                {
+                    _logger.LogDebug(ex, "PowerShell worker unavailable — restarting once.");
+                    KillWorker();
+                }
+            }
         }
         finally
         {
@@ -388,5 +562,10 @@ public sealed class HyperVManager : IDisposable
     /// <summary>Escapes a value for use inside a PowerShell single-quoted string.</summary>
     private static string Esc(string s) => s.Replace("'", "''");
 
-    public void Dispose() => _lock.Dispose();
+    public void Dispose()
+    {
+        _workerReaper.Dispose();
+        KillWorker();
+        _lock.Dispose();
+    }
 }

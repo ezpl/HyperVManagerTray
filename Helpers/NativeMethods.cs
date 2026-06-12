@@ -120,6 +120,10 @@ internal static class NativeMethods
     /// before ConfigureAwait(false) moves the continuation off the UI thread.</summary>
     internal static IntPtr CaptureHwnd() => GetForegroundWindow();
 
+    /// <summary>Current cursor position in physical screen pixels, or (int.MinValue, int.MinValue) on failure.</summary>
+    internal static (int X, int Y) GetCursorPosition()
+        => GetCursorPos(out var p) ? (p.X, p.Y) : (int.MinValue, int.MinValue);
+
     internal static void Info(string text, string caption)
         => MessageBoxW(IntPtr.Zero, text, caption, MB_ICONINFORMATION | MB_TOPMOST);
 
